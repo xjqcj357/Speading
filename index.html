@@ -1,0 +1,1224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Speading</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1">
+<meta name="theme-color" content="#ece4d4">
+<style>
+  /*
+    Speading — a reading instrument.
+    Type stack: a system serif (New York / Charter / Georgia / Iowan)
+    set heavy enough to be read at a single glance, on a warm paper ground.
+    The focal word is centred on its optical baseline, and one letter — the
+    ORP — is marked by a hairline tick beneath it, not by colour. The page
+    breathes; controls recede until called.
+  */
+
+  :root {
+    color-scheme: light;
+    --paper:        #ece4d4;
+    --paper-deep:   #e3d9c4;
+    --paper-edge:   #d8ccb2;
+    --ink:          #1b1814;
+    --ink-soft:     #6b6357;
+    --ink-faint:    #968c7c;
+    --rule:         #c8bca0;
+    --accent:       #8a2a1f;   /* a marginalia red — used sparingly */
+    --serif: "New York", "Iowan Old Style", "Charter", "Sitka Text",
+             "Hoefler Text", "Apple Garamond", "EB Garamond", Georgia,
+             "Times New Roman", serif;
+    --grotesk: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text",
+               "Segoe UI", Roboto, system-ui, sans-serif;
+    --duration: 90ms;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0; padding: 0;
+    height: 100%; width: 100%;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--serif);
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* A faint grain — woven paper, not a gradient */
+  body::before {
+    content: "";
+    position: fixed; inset: 0;
+    pointer-events: none;
+    background-image:
+      radial-gradient(rgba(60,40,20,0.045) 1px, transparent 1px),
+      radial-gradient(rgba(40,20,10,0.035) 1px, transparent 1px);
+    background-size: 3px 3px, 7px 7px;
+    background-position: 0 0, 1px 2px;
+    mix-blend-mode: multiply;
+    z-index: 1;
+  }
+  /* A vignette of warmer ink at the corners */
+  body::after {
+    content: "";
+    position: fixed; inset: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(ellipse at center,
+        transparent 55%,
+        rgba(80,55,30,0.12) 100%);
+    z-index: 1;
+  }
+
+  /* ---------- Stage ---------- */
+
+  #stage {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    z-index: 2;
+  }
+
+  /* The reticle — a single horizontal hairline marking the optical
+     baseline. The eye lands on it; the word sits on it. */
+  #stage::before {
+    content: "";
+    position: absolute;
+    left: 50%; top: 50%;
+    width: clamp(180px, 36vw, 520px);
+    height: 1px;
+    background: var(--rule);
+    transform: translate(-50%, calc(0.42em + 22px));
+    font-size: clamp(48px, 12vw, 168px);
+    opacity: 0.55;
+    transition: opacity 400ms ease;
+    pointer-events: none;
+  }
+  body.empty #stage::before { opacity: 0; }
+  body.reading #stage::before { opacity: 0.35; }
+
+  #word {
+    font-family: var(--serif);
+    font-size: clamp(48px, 12vw, 168px);
+    font-weight: 400;
+    letter-spacing: -0.012em;
+    line-height: 1;
+    text-align: center;
+    padding: 0 24px;
+    max-width: 96vw;
+    overflow-wrap: break-word;
+    color: var(--ink);
+    /* Softly crossfaded by JS: opacity bumps down then back up */
+    transition: opacity var(--duration) cubic-bezier(.4,0,.2,1);
+    will-change: opacity;
+    font-feature-settings: "kern" 1, "liga" 1, "calt" 1, "onum" 1;
+  }
+  /* The empty-state message uses a smaller, italic voice. */
+  body.empty #word {
+    font-size: clamp(20px, 3.4vw, 30px);
+    font-style: italic;
+    font-weight: 400;
+    color: var(--ink-soft);
+    letter-spacing: 0.003em;
+    line-height: 1.45;
+    max-width: 32ch;
+  }
+  body.loading #word {
+    font-size: clamp(16px, 2.4vw, 22px);
+    font-style: italic;
+    color: var(--ink-soft);
+    letter-spacing: 0.04em;
+    text-transform: lowercase;
+  }
+
+  /* ORP — Optimal Recognition Point.
+     A hairline tick under one letter. No colour, no red. Just typography. */
+  #word .orp {
+    position: relative;
+    display: inline-block;
+  }
+  #word .orp::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    bottom: -0.18em;
+    width: 0.08em;
+    height: 0.05em;
+    background: var(--accent);
+    transform: translateX(-50%);
+    border-radius: 1px;
+  }
+
+  /* ---------- Folio (top metadata strip) ---------- */
+
+  #folio {
+    position: fixed;
+    top: max(18px, env(safe-area-inset-top));
+    left: max(20px, env(safe-area-inset-left));
+    right: max(20px, env(safe-area-inset-right));
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 16px;
+    z-index: 3;
+    pointer-events: none;
+    font-family: var(--grotesk);
+  }
+  #brand {
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 14px;
+    letter-spacing: 0.04em;
+    color: var(--ink-soft);
+  }
+  #brand::after {
+    content: "";
+    display: inline-block;
+    width: 5px; height: 5px;
+    background: var(--accent);
+    border-radius: 50%;
+    margin-left: 6px;
+    vertical-align: middle;
+    transform: translateY(-2px);
+    opacity: 0.85;
+  }
+  #status {
+    font-family: var(--grotesk);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+
+  #hint {
+    position: fixed;
+    bottom: calc(180px + env(safe-area-inset-bottom));
+    left: 0; right: 0;
+    text-align: center;
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 13px;
+    color: var(--ink-faint);
+    pointer-events: none;
+    padding: 0 24px;
+    z-index: 3;
+    transition: opacity 400ms ease;
+  }
+  body.reading #hint { opacity: 0; }
+
+  /* ---------- Toast ---------- */
+
+  #toast {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, calc(-50% - 14vh));
+    background: var(--paper-deep);
+    border: 1px solid var(--rule);
+    color: var(--ink);
+    padding: 10px 18px;
+    border-radius: 2px;
+    font-family: var(--grotesk);
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    opacity: 0;
+    transition: opacity 280ms ease, transform 280ms ease;
+    pointer-events: none;
+    z-index: 20;
+    box-shadow: 0 1px 0 rgba(0,0,0,0.04), 0 12px 30px -10px rgba(60,30,10,0.15);
+    font-variant-numeric: tabular-nums;
+  }
+  #toast.show { opacity: 1; transform: translate(-50%, calc(-50% - 16vh)); }
+
+  /* ---------- Progress (a hairline in the margin) ---------- */
+
+  #progress {
+    position: fixed;
+    left: max(20px, env(safe-area-inset-left));
+    right: max(20px, env(safe-area-inset-right));
+    bottom: calc(154px + env(safe-area-inset-bottom));
+    height: 1px;
+    background: var(--rule);
+    z-index: 4;
+    opacity: 0.45;
+  }
+  #progressBar {
+    height: 100%;
+    background: var(--ink);
+    width: 0;
+    transition: width 90ms linear;
+  }
+
+  /* ---------- Controls (the colophon) ---------- */
+
+  #controls {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    padding: 18px max(20px, env(safe-area-inset-left))
+             max(18px, env(safe-area-inset-bottom))
+             max(20px, env(safe-area-inset-right));
+    display: flex; flex-direction: column; gap: 14px;
+    font-family: var(--grotesk);
+    font-size: 13px;
+    color: var(--ink-soft);
+    z-index: 5;
+    background: linear-gradient(to top,
+      var(--paper) 30%,
+      rgba(236,228,212,0.85) 70%,
+      rgba(236,228,212,0));
+  }
+  #controls .row {
+    display: flex; align-items: center; gap: 18px;
+    justify-content: center;
+  }
+  #toolbar {
+    border-top: 1px solid var(--rule);
+    padding-top: 14px;
+  }
+
+  /* Buttons set as small-caps text links, not boxes.
+     Touch target preserved via padding. */
+  #controls button,
+  #fileLabel {
+    background: transparent;
+    color: var(--ink);
+    border: none;
+    padding: 12px 6px;
+    min-height: 44px;
+    min-width: 44px;
+    cursor: pointer;
+    font: inherit;
+    font-family: var(--grotesk);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    position: relative;
+    transition: color 160ms ease;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  #controls button::after,
+  #fileLabel::after {
+    content: "";
+    position: absolute;
+    left: 6px; right: 6px;
+    bottom: 8px;
+    height: 1px;
+    background: var(--ink);
+    transform: scaleX(0);
+    transform-origin: center;
+    transition: transform 220ms cubic-bezier(.4,0,.2,1);
+  }
+  #controls button:hover::after,
+  #fileLabel:hover::after { transform: scaleX(1); }
+  #controls button:active { color: var(--accent); }
+  #controls button:disabled {
+    color: var(--ink-faint);
+    opacity: 0.5;
+    cursor: default;
+  }
+  #controls button:disabled::after { display: none; }
+
+  /* Play button is the keystone — set in serif, not all-caps. */
+  #playBtn {
+    font-family: var(--serif) !important;
+    font-style: italic !important;
+    font-size: 17px !important;
+    text-transform: none !important;
+    letter-spacing: 0.01em !important;
+    color: var(--ink) !important;
+    padding: 12px 22px !important;
+  }
+  #playBtn::before {
+    content: "";
+    display: inline-block;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    margin-right: 10px;
+    transform: translateY(-2px);
+    transition: background 200ms ease, transform 200ms ease;
+  }
+  body.reading #playBtn::before {
+    background: var(--ink);
+    transform: translateY(-2px) scale(0.6);
+  }
+
+  /* The skip controls use serif chevrons, not double-arrows */
+  #back10Btn, #fwd10Btn {
+    font-family: var(--serif) !important;
+    font-style: italic !important;
+    font-size: 14px !important;
+    text-transform: none !important;
+    letter-spacing: 0 !important;
+  }
+
+  /* ---------- WPM tempo dial ---------- */
+
+  #wpmRow {
+    align-items: center;
+    gap: 16px;
+  }
+  #wpmCaption {
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 12px;
+    color: var(--ink-soft);
+    letter-spacing: 0.02em;
+    flex-shrink: 0;
+  }
+  #wpm {
+    flex: 1;
+    max-width: 360px;
+    height: 28px;
+    accent-color: var(--ink);
+    touch-action: manipulation;
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    margin: 0;
+  }
+  #wpm::-webkit-slider-runnable-track {
+    height: 1px;
+    background: var(--rule);
+    border: none;
+  }
+  #wpm::-moz-range-track {
+    height: 1px;
+    background: var(--rule);
+    border: none;
+  }
+  #wpm::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--paper);
+    border: 1.5px solid var(--ink);
+    margin-top: -7px;
+    cursor: pointer;
+    transition: transform 160ms ease;
+  }
+  #wpm::-webkit-slider-thumb:active { transform: scale(1.2); background: var(--ink); }
+  #wpm::-moz-range-thumb {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--paper);
+    border: 1.5px solid var(--ink);
+    cursor: pointer;
+  }
+  #wpmLabel {
+    font-family: var(--grotesk);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+    min-width: 78px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+
+  #file { display: none; }
+
+  /* ---------- Drop overlay ---------- */
+
+  #drop {
+    position: fixed; inset: 0;
+    display: none; align-items: center; justify-content: center;
+    background: rgba(236,228,212,0.94);
+    z-index: 30;
+    pointer-events: none;
+  }
+  #drop.active { display: flex; }
+  #drop::before {
+    content: "";
+    position: absolute;
+    inset: 24px;
+    border: 1px solid var(--ink);
+  }
+  #drop::after {
+    content: "";
+    position: absolute;
+    inset: 32px;
+    border: 1px solid var(--ink);
+    opacity: 0.3;
+  }
+  #drop > span {
+    position: relative;
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: clamp(22px, 4vw, 34px);
+    color: var(--ink);
+    letter-spacing: 0.01em;
+  }
+
+  /* ---------- Error ---------- */
+
+  #err {
+    position: fixed;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    color: var(--accent);
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 16px;
+    max-width: 32ch;
+    text-align: center;
+    line-height: 1.5;
+    display: none;
+    z-index: 25;
+    padding: 24px;
+    background: var(--paper);
+    border-top: 1px solid var(--accent);
+    border-bottom: 1px solid var(--accent);
+  }
+
+  /* ---------- Browse overlay — the typeset page ---------- */
+
+  #overview {
+    position: fixed; inset: 0;
+    background: var(--paper);
+    color: var(--ink);
+    display: none;
+    flex-direction: column;
+    z-index: 15;
+  }
+  #overview.open { display: flex; }
+  #overview::before {
+    /* page texture */
+    content: "";
+    position: absolute; inset: 0;
+    background-image:
+      radial-gradient(rgba(60,40,20,0.04) 1px, transparent 1px);
+    background-size: 4px 4px;
+    pointer-events: none;
+    mix-blend-mode: multiply;
+  }
+
+  #ovHeader {
+    position: relative;
+    padding: max(20px, env(safe-area-inset-top))
+             max(28px, env(safe-area-inset-left))
+             14px
+             max(28px, env(safe-area-inset-right));
+    border-bottom: 1px solid var(--rule);
+    font-family: var(--grotesk);
+  }
+  #ovTitleRow {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 12px;
+  }
+  #ovTitle {
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 17px;
+    color: var(--ink);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    letter-spacing: 0.005em;
+  }
+  #ovInfo {
+    font-family: var(--grotesk);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+  }
+  #ovHeader button {
+    background: transparent;
+    color: var(--ink);
+    border: none;
+    padding: 10px 8px;
+    min-height: 44px;
+    min-width: 44px;
+    font-family: var(--grotesk);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    position: relative;
+  }
+  #ovHeader button::after {
+    content: "";
+    position: absolute;
+    left: 8px; right: 8px;
+    bottom: 6px;
+    height: 1px;
+    background: var(--ink);
+    transform: scaleX(0);
+    transition: transform 200ms ease;
+  }
+  #ovHeader button:hover::after { transform: scaleX(1); }
+  #ovHeader #ovJump {
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 14px;
+    text-transform: none;
+    letter-spacing: 0.01em;
+    color: var(--accent);
+  }
+  #ovHeader #ovJump::after { background: var(--accent); }
+
+  #ovNav {
+    display: flex; align-items: center; gap: 4px;
+    flex-wrap: wrap;
+  }
+  #ovNav .spacer { flex: 1; }
+  #ovPage {
+    flex: 1 1 100%;
+    margin-top: 10px;
+    height: 22px;
+    accent-color: var(--ink);
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+  }
+  #ovPage::-webkit-slider-runnable-track { height: 1px; background: var(--rule); }
+  #ovPage::-moz-range-track { height: 1px; background: var(--rule); }
+  #ovPage::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: var(--paper);
+    border: 1.5px solid var(--ink);
+    margin-top: -6px;
+    cursor: pointer;
+  }
+  #ovPage::-moz-range-thumb {
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: var(--paper);
+    border: 1.5px solid var(--ink);
+    cursor: pointer;
+  }
+
+  #ovBody {
+    position: relative;
+    flex: 1;
+    overflow-y: auto;
+    padding: 48px max(28px, 6vw) calc(48px + env(safe-area-inset-bottom));
+    font-family: var(--serif);
+    font-size: clamp(17px, 2.2vw, 19px);
+    line-height: 1.7;
+    max-width: 64ch;
+    margin: 0 auto;
+    width: 100%;
+    text-align: justify;
+    text-justify: inter-word;
+    hyphens: auto;
+    -webkit-hyphens: auto;
+    -webkit-overflow-scrolling: touch;
+    color: var(--ink);
+    z-index: 1;
+    font-feature-settings: "kern" 1, "liga" 1, "onum" 1;
+  }
+  /* Drop cap on the first word of each browse page */
+  #ovBody .w:first-child {
+    /* dropcap target — set in JS-rendered first letter */
+  }
+  #ovBody .firstchar {
+    float: left;
+    font-family: var(--serif);
+    font-size: 3.4em;
+    line-height: 0.85;
+    padding: 0.08em 0.06em 0 0;
+    margin-right: 0.04em;
+    color: var(--ink);
+    font-weight: 400;
+  }
+  #ovBody .w {
+    cursor: pointer;
+    padding: 1px 1px;
+    border-radius: 2px;
+    -webkit-tap-highlight-color: rgba(27,24,20,0.08);
+    transition: background 120ms ease;
+  }
+  #ovBody .w:hover {
+    background: var(--paper-deep);
+  }
+  #ovBody .w.current {
+    background: var(--ink);
+    color: var(--paper);
+    box-shadow: 0 0 0 2px var(--ink);
+  }
+  #ovBody .w.read { color: var(--ink-faint); }
+
+  #ovFooter {
+    padding: 14px 24px max(14px, env(safe-area-inset-bottom));
+    border-top: 1px solid var(--rule);
+    color: var(--ink-faint);
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 12px;
+    text-align: center;
+    letter-spacing: 0.01em;
+  }
+
+  /* ---------- Mobile adjustments ---------- */
+
+  @media (max-width: 560px) {
+    #folio { top: max(14px, env(safe-area-inset-top)); }
+    #brand { font-size: 12px; }
+    #status { font-size: 10px; letter-spacing: 0.12em; }
+    #controls { padding-bottom: max(14px, env(safe-area-inset-bottom)); gap: 10px; }
+    #controls .row { gap: 8px; flex-wrap: wrap; }
+    #toolbar { padding-top: 10px; gap: 4px; }
+    #controls button,
+    #fileLabel { padding: 11px 4px; font-size: 10px; letter-spacing: 0.14em; }
+    #playBtn { font-size: 16px !important; padding: 11px 16px !important; }
+    #back10Btn, #fwd10Btn { font-size: 13px !important; }
+    #wpmCaption { display: none; }
+    #wpmLabel { font-size: 10px; min-width: 70px; }
+    #hint { bottom: calc(160px + env(safe-area-inset-bottom)); }
+    #progress { bottom: calc(140px + env(safe-area-inset-bottom)); }
+    #ovHeader { padding-left: 18px; padding-right: 18px; }
+    #ovBody { padding: 32px 22px calc(32px + env(safe-area-inset-bottom)); }
+  }
+
+  @media (max-width: 380px) {
+    #controls .row { gap: 2px; }
+    #brand { display: none; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    #word { transition: none; }
+  }
+</style>
+</head>
+<body class="empty">
+
+  <div id="folio">
+    <span id="brand">Speading</span>
+    <span id="status"></span>
+  </div>
+
+  <div id="stage">
+    <div id="word">A quiet place to read at speed.<br>Open a book to begin.</div>
+  </div>
+
+  <div id="hint">tap the page to begin &nbsp;·&nbsp; tap again to pause</div>
+  <div id="toast"></div>
+  <div id="err"></div>
+
+  <div id="progress"><div id="progressBar"></div></div>
+
+  <div id="controls">
+    <div class="row" id="toolbar">
+      <label id="fileLabel" for="file">Open</label>
+      <input id="file" type="file" accept=".pdf,.epub,.mobi,.azw,.azw3,application/pdf,application/epub+zip">
+      <button id="back10Btn" disabled title="Back ten words">‹ ten</button>
+      <button id="playBtn" disabled>Read</button>
+      <button id="fwd10Btn" disabled title="Forward ten words">ten ›</button>
+      <button id="browseBtn" disabled>Browse</button>
+    </div>
+    <div class="row" id="wpmRow">
+      <span id="wpmCaption">tempo</span>
+      <input id="wpm" type="range" min="24" max="1000" value="300" step="1" aria-label="Words per minute">
+      <span id="wpmLabel">300 wpm</span>
+    </div>
+  </div>
+
+  <div id="overview" aria-hidden="true">
+    <div id="ovHeader">
+      <div id="ovTitleRow">
+        <span id="ovTitle">—</span>
+        <span id="ovInfo">Page 1 / 1</span>
+      </div>
+      <div id="ovNav">
+        <button id="ovPrev" title="Previous page">‹ Previous</button>
+        <span class="spacer"></span>
+        <button id="ovJump" title="Resume from this page">Resume here</button>
+        <span class="spacer"></span>
+        <button id="ovNext" title="Next page">Next ›</button>
+        <button id="ovClose" title="Close">Close</button>
+      </div>
+      <input id="ovPage" type="range" min="1" max="1" value="1" step="1" aria-label="Page">
+    </div>
+    <div id="ovBody"></div>
+    <div id="ovFooter">Tap any word to set your reading position.</div>
+  </div>
+
+  <div id="drop"><span>Release to open</span></div>
+
+<script src="pdf.min.js"></script>
+<script src="jszip.min.js"></script>
+<script>
+  const $ = (id) => document.getElementById(id);
+
+  // ---- WPM control (set up FIRST so it always works, even if later code fails) ----
+  const wpmEl = $("wpm"), wpmLabel = $("wpmLabel");
+  const WPM_KEY = "speading:wpm";
+  try {
+    const savedWpm = localStorage.getItem(WPM_KEY);
+    if (savedWpm) wpmEl.value = savedWpm;
+  } catch {}
+  function setWpmLabel() { wpmLabel.textContent = wpmEl.value + " wpm"; }
+  function intervalMs() { return 60000 / Math.max(1, parseInt(wpmEl.value, 10)); }
+  function onWpmChange() {
+    setWpmLabel();
+    try { localStorage.setItem(WPM_KEY, wpmEl.value); } catch {}
+    if (typeof rescheduleTick === "function") rescheduleTick();
+  }
+  wpmEl.addEventListener("input", onWpmChange);
+  wpmEl.addEventListener("change", onWpmChange);
+  setWpmLabel();
+
+  // ---- pdf.js init ----
+  try {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "pdf.worker.min.js";
+  } catch (e) { console.error("pdf.js init failed:", e); }
+
+  const wordEl = $("word");
+  const playBtn = $("playBtn"), browseBtn = $("browseBtn"), fileInput = $("file");
+  const back10Btn = $("back10Btn"), fwd10Btn = $("fwd10Btn");
+  const statusEl = $("status"), errEl = $("err"), bar = $("progressBar");
+  const toastEl = $("toast"), drop = $("drop"), stage = $("stage");
+  const overview = $("overview"), ovBody = $("ovBody"), ovTitle = $("ovTitle");
+  const ovPage = $("ovPage"), ovInfo = $("ovInfo");
+  const ovPrev = $("ovPrev"), ovNext = $("ovNext"), ovClose = $("ovClose"), ovJump = $("ovJump");
+
+  const PAGE_SIZE = 250;
+  const STORAGE_PREFIX = "speading:v1:";
+
+  let words = [];
+  let idx = 0;
+  let playing = false;
+  let timer = null;
+  let bookKey = null;
+  let bookName = "";
+  let currentOverviewPage = 0;
+
+  function rescheduleTick() {
+    if (playing) { clearTimeout(timer); timer = setTimeout(tick, intervalMs()); }
+  }
+
+  // ---- Toast ----
+  let toastTimer = null;
+  function toast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove("show"), 2400);
+  }
+
+  // ---- Reading state ----
+  function pageCount() { return Math.max(1, Math.ceil(words.length / PAGE_SIZE)); }
+  function pageOf(i) { return Math.floor(i / PAGE_SIZE); }
+
+  // Compute the optimal recognition point for a word.
+  // Roughly: shorter words → first letter; longer words → letter ~⅓ from start.
+  function orpIndex(w) {
+    const n = w.length;
+    if (n <= 1) return 0;
+    if (n <= 5) return 1;
+    if (n <= 9) return 2;
+    if (n <= 13) return 3;
+    return 4;
+  }
+
+  // Render the focal word with the ORP letter wrapped in a span.
+  // Punctuation is skipped when picking the ORP — we want a *letter*.
+  function renderFocal(w) {
+    // Strip the word into pre-punctuation, body, post-punctuation
+    const letters = [...w];
+    // find first letter index
+    let start = 0;
+    while (start < letters.length && !/\p{L}/u.test(letters[start])) start++;
+    if (start === letters.length) {
+      wordEl.textContent = w;
+      return;
+    }
+    // letters from `start` onwards — pick ORP within the letter span
+    const tail = letters.slice(start);
+    const orp = start + Math.min(orpIndex(tail.join("")), tail.length - 1);
+
+    const before = letters.slice(0, orp).join("");
+    const at = letters[orp];
+    const after = letters.slice(orp + 1).join("");
+
+    wordEl.innerHTML = "";
+    if (before) wordEl.appendChild(document.createTextNode(before));
+    const span = document.createElement("span");
+    span.className = "orp";
+    span.textContent = at;
+    wordEl.appendChild(span);
+    if (after) wordEl.appendChild(document.createTextNode(after));
+  }
+
+  // Cross-fade word swaps: a brief opacity drop, change content, fade back.
+  // Falls back to instant swap when reduced motion is requested.
+  const reducedMotion =
+    window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function showWord() {
+    const w = words[idx];
+    if (!w) return;
+    if (reducedMotion) {
+      renderFocal(w);
+    } else {
+      wordEl.style.opacity = "0";
+      // Use a microtask delay so the eye registers the blank frame.
+      setTimeout(() => {
+        renderFocal(w);
+        wordEl.style.opacity = "1";
+      }, 45);
+    }
+    bar.style.width = (idx / Math.max(1, words.length - 1) * 100).toFixed(2) + "%";
+    statusEl.textContent =
+      (idx + 1).toLocaleString() + " / " + words.length.toLocaleString() +
+      "  ·  " + (pageOf(idx) + 1) + " of " + pageCount();
+    saveProgress();
+  }
+
+  function tick() {
+    if (!playing) return;
+    if (idx >= words.length - 1) { pause(); return; }
+    idx++;
+    showWord();
+    timer = setTimeout(tick, intervalMs());
+  }
+
+  function play() {
+    if (!words.length) return;
+    if (idx >= words.length - 1) idx = 0;
+    playing = true;
+    document.body.classList.add("reading");
+    playBtn.textContent = "Pause";
+    timer = setTimeout(tick, intervalMs());
+  }
+  function pause() {
+    playing = false;
+    document.body.classList.remove("reading");
+    playBtn.textContent = "Read";
+    if (timer) { clearTimeout(timer); timer = null; }
+  }
+  function toggle() { playing ? pause() : play(); }
+
+  // ---- Persistence ----
+  function saveProgress() {
+    if (!bookKey) return;
+    try {
+      localStorage.setItem(bookKey, JSON.stringify({
+        idx, total: words.length, name: bookName, t: Date.now()
+      }));
+    } catch {}
+  }
+  function loadProgress(key, total) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return null;
+      const v = JSON.parse(raw);
+      if (v && v.total === total && typeof v.idx === "number") return v;
+    } catch {}
+    return null;
+  }
+
+  // ---- Overview ----
+  function openOverview() {
+    if (!words.length) return;
+    pause();
+    currentOverviewPage = pageOf(idx);
+    renderOverview();
+    overview.classList.add("open");
+    overview.setAttribute("aria-hidden", "false");
+  }
+  function closeOverview() {
+    overview.classList.remove("open");
+    overview.setAttribute("aria-hidden", "true");
+  }
+  function renderOverview() {
+    if (currentOverviewPage < 0) currentOverviewPage = 0;
+    if (currentOverviewPage >= pageCount()) currentOverviewPage = pageCount() - 1;
+    ovTitle.textContent = bookName || "—";
+    ovPage.max = pageCount();
+    ovPage.value = currentOverviewPage + 1;
+    ovInfo.textContent = "Page " + (currentOverviewPage + 1) + " / " + pageCount();
+
+    const start = currentOverviewPage * PAGE_SIZE;
+    const end = Math.min(words.length, start + PAGE_SIZE);
+    const frag = document.createDocumentFragment();
+    for (let i = start; i < end; i++) {
+      const span = document.createElement("span");
+      span.className = "w" + (i === idx ? " current" : i < idx ? " read" : "");
+
+      // Drop-cap treatment for the very first word of the page,
+      // when its first character is a letter.
+      if (i === start && /\p{L}/u.test(words[i][0])) {
+        const w = words[i];
+        const cap = document.createElement("span");
+        cap.className = "firstchar";
+        cap.textContent = w[0];
+        span.appendChild(cap);
+        span.appendChild(document.createTextNode(w.slice(1)));
+      } else {
+        span.textContent = words[i];
+      }
+      span.dataset.i = i;
+      frag.appendChild(span);
+      frag.appendChild(document.createTextNode(" "));
+    }
+    ovBody.innerHTML = "";
+    ovBody.appendChild(frag);
+    const cur = ovBody.querySelector(".w.current");
+    if (cur) cur.scrollIntoView({ block: "center" });
+    else ovBody.scrollTop = 0;
+  }
+  ovBody.addEventListener("click", (e) => {
+    const t = e.target.closest(".w");
+    if (!t) return;
+    const i = parseInt(t.dataset.i, 10);
+    if (Number.isFinite(i)) {
+      idx = i;
+      showWord();
+      closeOverview();
+    }
+  });
+  ovPrev.addEventListener("click", () => { currentOverviewPage--; renderOverview(); });
+  ovNext.addEventListener("click", () => { currentOverviewPage++; renderOverview(); });
+  ovClose.addEventListener("click", closeOverview);
+  ovJump.addEventListener("click", () => { idx = currentOverviewPage * PAGE_SIZE; showWord(); closeOverview(); });
+  ovPage.addEventListener("input", () => {
+    const n = parseInt(ovPage.value, 10);
+    if (Number.isFinite(n)) { currentOverviewPage = n - 1; renderOverview(); }
+  });
+
+  // ---- Controls ----
+  playBtn.addEventListener("click", toggle);
+  browseBtn.addEventListener("click", openOverview);
+  back10Btn.addEventListener("click", () => {
+    if (!words.length) return;
+    idx = Math.max(0, idx - 10);
+    showWord();
+  });
+  fwd10Btn.addEventListener("click", () => {
+    if (!words.length) return;
+    idx = Math.min(words.length - 1, idx + 10);
+    showWord();
+  });
+  stage.addEventListener("click", () => { if (words.length) toggle(); });
+
+  // ---- Tokenize / load ----
+  function tokenize(text) {
+    return text
+      .replace(/\r/g, "")
+      .replace(/[­]/g, "")
+      .replace(/-\n/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .split(" ")
+      .filter(Boolean);
+  }
+
+  function setError(msg) {
+    errEl.textContent = msg;
+    errEl.style.display = "block";
+    setTimeout(() => { errEl.style.display = "none"; }, 6000);
+  }
+
+  function loadText(text, file) {
+    const toks = tokenize(text);
+    if (!toks.length) { setError("No readable text found in " + file.name); return; }
+    words = toks;
+    bookName = file.name;
+    bookKey = STORAGE_PREFIX + file.name + ":" + file.size;
+    const prior = loadProgress(bookKey, words.length);
+    idx = prior ? prior.idx : 0;
+    document.body.classList.remove("empty", "loading");
+    playBtn.disabled = false;
+    browseBtn.disabled = false;
+    back10Btn.disabled = false;
+    fwd10Btn.disabled = false;
+    showWord();
+    if (prior) toast("Resumed at word " + (idx + 1).toLocaleString() + " of " + words.length.toLocaleString());
+    else toast("Loaded " + words.length.toLocaleString() + " words");
+  }
+
+  // ---- Parsers ----
+  async function readPdf(buffer) {
+    const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+    let out = "";
+    for (let p = 1; p <= pdf.numPages; p++) {
+      wordEl.textContent = "reading pdf · " + p + " of " + pdf.numPages;
+      const page = await pdf.getPage(p);
+      const tc = await page.getTextContent();
+      let last = null;
+      for (const item of tc.items) {
+        if (last && last.transform && item.transform && last.transform[5] !== item.transform[5]) {
+          out += "\n";
+        }
+        out += item.str;
+        if (item.hasEOL) out += "\n"; else out += " ";
+        last = item;
+      }
+      out += "\n";
+    }
+    return out;
+  }
+
+  async function readEpub(buffer) {
+    const zip = await JSZip.loadAsync(buffer);
+    const containerFile = zip.file("META-INF/container.xml");
+    if (!containerFile) throw new Error("Not a valid EPUB (missing container.xml)");
+    const containerXml = await containerFile.async("string");
+    const opfPath = (containerXml.match(/full-path="([^"]+)"/) || [])[1];
+    if (!opfPath) throw new Error("EPUB has no OPF");
+    const opfDir = opfPath.includes("/") ? opfPath.replace(/\/[^/]*$/, "/") : "";
+    const opf = await zip.file(opfPath).async("string");
+    const parser = new DOMParser();
+    const opfDoc = parser.parseFromString(opf, "application/xml");
+
+    const manifest = {};
+    opfDoc.querySelectorAll("manifest > item").forEach((it) => {
+      manifest[it.getAttribute("id")] = it.getAttribute("href");
+    });
+    const spineIds = [...opfDoc.querySelectorAll("spine > itemref")].map(
+      (i) => i.getAttribute("idref")
+    );
+
+    let out = "";
+    for (let i = 0; i < spineIds.length; i++) {
+      wordEl.textContent = "reading epub · " + (i + 1) + " of " + spineIds.length;
+      const href = manifest[spineIds[i]];
+      if (!href) continue;
+      const path = decodeURIComponent(opfDir + href);
+      const f = zip.file(path);
+      if (!f) continue;
+      const html = await f.async("string");
+      const doc = parser.parseFromString(html, "text/html");
+      doc.querySelectorAll("script,style,nav").forEach((n) => n.remove());
+      out += (doc.body ? doc.body.textContent : doc.documentElement.textContent) + "\n\n";
+    }
+    return out;
+  }
+
+  function palmDocDecompress(input) {
+    const out = [];
+    let i = 0;
+    while (i < input.length) {
+      const b = input[i++];
+      if (b === 0) out.push(0);
+      else if (b <= 8) { for (let k = 0; k < b && i < input.length; k++) out.push(input[i++]); }
+      else if (b <= 0x7f) out.push(b);
+      else if (b <= 0xbf) {
+        if (i >= input.length) break;
+        const b2 = input[i++];
+        const word = (b << 8) | b2;
+        const distance = (word >> 3) & 0x07ff;
+        const length = (word & 0x0007) + 3;
+        const start = out.length - distance;
+        if (start < 0) break;
+        for (let k = 0; k < length; k++) out.push(out[start + k]);
+      } else {
+        out.push(0x20); out.push(b ^ 0x80);
+      }
+    }
+    return new Uint8Array(out);
+  }
+
+  async function readMobi(buffer) {
+    const data = new Uint8Array(buffer);
+    const dv = new DataView(buffer);
+    if (data.length < 78) throw new Error("Not a MOBI file");
+    const numRecords = dv.getUint16(76, false);
+    const recOffsets = [];
+    for (let r = 0; r < numRecords; r++) {
+      recOffsets.push(dv.getUint32(78 + r * 8, false));
+    }
+    recOffsets.push(data.length);
+
+    const rec0 = data.subarray(recOffsets[0], recOffsets[1]);
+    const compression = (rec0[0] << 8) | rec0[1];
+    const textRecordCount = (rec0[8] << 8) | rec0[9];
+
+    if (compression === 17480) {
+      throw new Error("This MOBI uses HUFF/CDIC compression which isn't supported in-browser. Convert to EPUB (e.g. with Calibre) and try again.");
+    }
+    if (compression !== 1 && compression !== 2) {
+      throw new Error("Unknown MOBI compression (" + compression + ")");
+    }
+
+    let raw = new Uint8Array(0);
+    for (let r = 1; r <= textRecordCount && r < recOffsets.length - 1; r++) {
+      wordEl.textContent = "reading mobi · " + r + " of " + textRecordCount;
+      let chunk = data.subarray(recOffsets[r], recOffsets[r + 1]);
+      if (compression === 2) chunk = palmDocDecompress(chunk);
+      const merged = new Uint8Array(raw.length + chunk.length);
+      merged.set(raw); merged.set(chunk, raw.length);
+      raw = merged;
+    }
+
+    let text;
+    try { text = new TextDecoder("utf-8", { fatal: false }).decode(raw); }
+    catch { text = new TextDecoder("latin1").decode(raw); }
+
+    const doc = new DOMParser().parseFromString(text, "text/html");
+    doc.querySelectorAll("script,style").forEach((n) => n.remove());
+    return doc.body ? doc.body.textContent : text;
+  }
+
+  async function handleFile(file) {
+    pause();
+    closeOverview();
+    playBtn.disabled = true;
+    browseBtn.disabled = true;
+    back10Btn.disabled = true;
+    fwd10Btn.disabled = true;
+    document.body.classList.remove("empty");
+    document.body.classList.add("loading");
+    wordEl.textContent = "opening " + file.name;
+    try {
+      const buf = await file.arrayBuffer();
+      const name = file.name.toLowerCase();
+      let text;
+      if (name.endsWith(".pdf")) text = await readPdf(buf);
+      else if (name.endsWith(".epub")) text = await readEpub(buf);
+      else if (name.endsWith(".mobi") || name.endsWith(".azw") || name.endsWith(".azw3")) text = await readMobi(buf);
+      else throw new Error("Unsupported file type. Use .pdf, .epub, or .mobi.");
+      loadText(text, file);
+    } catch (e) {
+      console.error(e);
+      document.body.classList.remove("loading");
+      document.body.classList.add("empty");
+      wordEl.innerHTML = "A quiet place to read at speed.<br>Open a book to begin.";
+      setError(e.message || String(e));
+    }
+  }
+
+  fileInput.addEventListener("change", (e) => {
+    if (e.target.files && e.target.files[0]) handleFile(e.target.files[0]);
+  });
+
+  ["dragenter", "dragover"].forEach((evt) =>
+    window.addEventListener(evt, (e) => {
+      e.preventDefault(); drop.classList.add("active");
+    })
+  );
+  ["dragleave", "drop"].forEach((evt) =>
+    window.addEventListener(evt, (e) => {
+      if (evt === "dragleave" && e.target !== drop) return;
+      drop.classList.remove("active");
+    })
+  );
+  window.addEventListener("drop", (e) => {
+    e.preventDefault();
+    drop.classList.remove("active");
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+  });
+</script>
+</body>
+</html>
