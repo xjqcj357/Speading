@@ -535,7 +535,31 @@
     color: var(--ink-faint);
     font-variant-numeric: tabular-nums;
     flex-shrink: 0;
+    display: inline-flex; align-items: baseline;
   }
+  #ovPageNum {
+    font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
+    color: var(--ink);
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--rule);
+    width: 4ch;
+    padding: 0 2px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    -moz-appearance: textfield;
+    appearance: textfield;
+    cursor: text;
+  }
+  #ovPageNum:focus {
+    outline: none;
+    border-bottom-color: var(--accent);
+    color: var(--accent);
+  }
+  #ovPageNum::-webkit-outer-spin-button,
+  #ovPageNum::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
   #ovHeader button {
     background: transparent;
     color: var(--ink);
@@ -721,9 +745,11 @@
     <div class="row" id="toolbar">
       <label id="fileLabel" for="file">Open</label>
       <input id="file" type="file" accept=".pdf,.epub,.mobi,.azw,.azw3,application/pdf,application/epub+zip">
+      <button id="back10pBtn" disabled title="Back ten pages">‹‹ ten pp</button>
       <button id="back10Btn" disabled title="Back ten words">‹ ten</button>
       <button id="playBtn" disabled>Read</button>
       <button id="fwd10Btn" disabled title="Forward ten words">ten ›</button>
+      <button id="fwd10pBtn" disabled title="Forward ten pages">ten pp ››</button>
       <button id="browseBtn" disabled>Browse</button>
     </div>
     <div class="row" id="wpmRow">
@@ -737,7 +763,7 @@
     <div id="ovHeader">
       <div id="ovTitleRow">
         <span id="ovTitle">—</span>
-        <span id="ovInfo">Page 1 / 1</span>
+        <span id="ovInfo">Page&nbsp;<input id="ovPageNum" type="number" min="1" value="1" inputmode="numeric" aria-label="Jump to page">&nbsp;/&nbsp;<span id="ovTotal">1</span></span>
       </div>
       <div id="ovNav">
         <button id="ovPrev" title="Previous page">‹ Previous</button>
@@ -786,10 +812,12 @@
   const wordEl = $("word");
   const playBtn = $("playBtn"), browseBtn = $("browseBtn"), fileInput = $("file");
   const back10Btn = $("back10Btn"), fwd10Btn = $("fwd10Btn");
+  const back10pBtn = $("back10pBtn"), fwd10pBtn = $("fwd10pBtn");
   const statusEl = $("status"), errEl = $("err"), bar = $("progressBar");
   const toastEl = $("toast"), drop = $("drop"), stage = $("stage");
   const overview = $("overview"), ovBody = $("ovBody"), ovTitle = $("ovTitle");
   const ovPage = $("ovPage"), ovInfo = $("ovInfo");
+  const ovPageNum = $("ovPageNum"), ovTotal = $("ovTotal");
   const ovPrev = $("ovPrev"), ovNext = $("ovNext"), ovClose = $("ovClose"), ovJump = $("ovJump");
 
   const PAGE_SIZE = 250;
@@ -947,7 +975,9 @@
     ovTitle.textContent = bookName || "—";
     ovPage.max = pageCount();
     ovPage.value = currentOverviewPage + 1;
-    ovInfo.textContent = "Page " + (currentOverviewPage + 1) + " / " + pageCount();
+    ovPageNum.max = pageCount();
+    if (document.activeElement !== ovPageNum) ovPageNum.value = currentOverviewPage + 1;
+    ovTotal.textContent = pageCount();
 
     const start = currentOverviewPage * PAGE_SIZE;
     const end = Math.min(words.length, start + PAGE_SIZE);
@@ -996,6 +1026,17 @@
     const n = parseInt(ovPage.value, 10);
     if (Number.isFinite(n)) { currentOverviewPage = n - 1; renderOverview(); }
   });
+  function commitTypedPage() {
+    const n = parseInt(ovPageNum.value, 10);
+    if (!Number.isFinite(n)) { ovPageNum.value = currentOverviewPage + 1; return; }
+    currentOverviewPage = Math.max(0, Math.min(pageCount() - 1, n - 1));
+    renderOverview();
+  }
+  ovPageNum.addEventListener("change", commitTypedPage);
+  ovPageNum.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); commitTypedPage(); ovPageNum.blur(); }
+  });
+  ovPageNum.addEventListener("focus", () => ovPageNum.select());
 
   // ---- Controls ----
   playBtn.addEventListener("click", toggle);
@@ -1005,12 +1046,79 @@
     idx = Math.max(0, idx - 10);
     showWord();
   });
+  back10pBtn.addEventListener("click", () => {
+    if (!words.length) return;
+    idx = Math.max(0, idx - PAGE_SIZE * 10);
+    showWord();
+  });
+  fwd10pBtn.addEventListener("click", () => {
+    if (!words.length) return;
+    idx = Math.min(words.length - 1, idx + PAGE_SIZE * 10);
+    showWord();
+  });
   fwd10Btn.addEventListener("click", () => {
     if (!words.length) return;
     idx = Math.min(words.length - 1, idx + 10);
     showWord();
   });
   stage.addEventListener("click", () => { if (words.length) toggle(); });
+
+  // ---- Mobile swipe gestures on stage ----
+  // tap          : play/pause (handled by click above)
+  // swipe ←/→   : ∓10 words
+  // swipe ↑/↓   : ∓10 pages
+  const isTouchDev = matchMedia("(hover: none) and (pointer: coarse)").matches
+    || ("ontouchstart" in window);
+  if (isTouchDev) {
+    let tStart = null, tMoved = false;
+    const SWIPE = 40;
+    stage.addEventListener("touchstart", (e) => {
+      if (e.touches.length !== 1) { tStart = null; return; }
+      tStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      tMoved = false;
+    }, { passive: true });
+    stage.addEventListener("touchmove", (e) => {
+      if (!tStart || e.touches.length !== 1) return;
+      const t = e.touches[0];
+      if (Math.abs(t.clientX - tStart.x) > 8 || Math.abs(t.clientY - tStart.y) > 8) tMoved = true;
+    }, { passive: true });
+    stage.addEventListener("touchend", (e) => {
+      if (!tStart || !words.length) { tStart = null; return; }
+      const t = e.changedTouches && e.changedTouches[0];
+      const start = tStart; tStart = null;
+      if (!t) return;
+      const dx = t.clientX - start.x, dy = t.clientY - start.y;
+      const adx = Math.abs(dx), ady = Math.abs(dy);
+      if (adx < SWIPE && ady < SWIPE) return; // let the click fire
+      e.preventDefault();
+      if (adx > ady) {
+        idx = dx < 0 ? Math.min(words.length - 1, idx + 10) : Math.max(0, idx - 10);
+      } else {
+        idx = dy < 0
+          ? Math.min(words.length - 1, idx + PAGE_SIZE * 10)
+          : Math.max(0, idx - PAGE_SIZE * 10);
+      }
+      showWord();
+    });
+
+    // ---- Swipe ←/→ in browse view = prev/next page ----
+    let bStart = null;
+    ovBody.addEventListener("touchstart", (e) => {
+      if (e.touches.length !== 1) { bStart = null; return; }
+      bStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    }, { passive: true });
+    ovBody.addEventListener("touchend", (e) => {
+      if (!bStart) return;
+      const t = e.changedTouches && e.changedTouches[0];
+      const start = bStart; bStart = null;
+      if (!t) return;
+      const dx = t.clientX - start.x, dy = t.clientY - start.y;
+      if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+        currentOverviewPage += dx < 0 ? 1 : -1;
+        renderOverview();
+      }
+    });
+  }
 
   // ---- Tokenize / load ----
   function tokenize(text) {
@@ -1043,6 +1151,8 @@
     browseBtn.disabled = false;
     back10Btn.disabled = false;
     fwd10Btn.disabled = false;
+    back10pBtn.disabled = false;
+    fwd10pBtn.disabled = false;
     showWord();
     if (prior) toast("Resumed at word " + (idx + 1).toLocaleString() + " of " + words.length.toLocaleString());
     else toast("Loaded " + words.length.toLocaleString() + " words");
@@ -1178,6 +1288,8 @@
     browseBtn.disabled = true;
     back10Btn.disabled = true;
     fwd10Btn.disabled = true;
+    back10pBtn.disabled = true;
+    fwd10pBtn.disabled = true;
     document.body.classList.remove("empty");
     document.body.classList.add("loading");
     wordEl.textContent = "opening " + file.name;
