@@ -919,6 +919,147 @@
   @media (prefers-reduced-motion: reduce) {
     .highway-word { animation: none; transform: translate3d(50%, -50%, 0); left: 50%; }
   }
+
+  /* ---------- Highway: continuous Sentence ribbon ---------- */
+  .highway-ribbon {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    transform: translate(0, -50%);
+    white-space: nowrap;
+    font-family: var(--serif);
+    font-weight: 500;
+    font-size: calc(clamp(48px, 9vw, 140px) * var(--word-scale, 1));
+    line-height: 1;
+    color: var(--ink);
+    font-feature-settings: "kern" 1, "liga" 1, "calt" 1, "onum" 1;
+    will-change: transform;
+  }
+  .highway-ribbon .hw-w { display: inline-block; margin-right: 0.45em; }
+  .highway-ribbon .hw-w .orp { color: var(--accent); position: relative; }
+  .highway-ribbon .hw-w .orp::after {
+    content: "";
+    position: absolute;
+    left: 50%; bottom: -0.18em;
+    width: 0.18em; height: 1px;
+    background: var(--accent);
+    transform: translateX(-50%);
+  }
+
+  /* When sentence ribbon is the active highway style, hide stray .highway-word floats */
+  body.style-sentence .highway-word { display: none; }
+  body.style-cars .highway-ribbon { display: none; }
+
+  /* ---------- Highway sub-section in settings ---------- */
+  #highwaySection { display: none; }
+  body.mode-highway #highwaySection { display: block; }
+  .settings-section + .settings-section {
+    margin-top: 24px;
+    padding-top: 24px;
+    border-top: 1px solid var(--rule);
+  }
+  #highwayStyle {
+    display: flex; flex-direction: column; gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+  }
+  .hw-btn {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
+    background: var(--paper);
+    border: none;
+    padding: 14px 18px;
+    cursor: pointer;
+    text-align: left;
+    font: inherit;
+    color: var(--ink);
+    transition: background 160ms ease;
+    position: relative;
+    -webkit-tap-highlight-color: transparent;
+    min-height: 56px;
+  }
+  .hw-btn:hover { background: rgba(154, 50, 30, 0.04); }
+  .hw-btn .mode-name {
+    font-family: var(--serif);
+    font-size: 16px;
+    font-weight: 500;
+  }
+  .hw-btn .mode-desc {
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    line-height: 1.4;
+  }
+  .hw-btn[aria-pressed="true"] {
+    background: var(--ink);
+    color: var(--paper);
+  }
+  .hw-btn[aria-pressed="true"] .mode-desc { color: rgba(236, 228, 212, 0.8); }
+  .hw-btn[aria-pressed="true"]::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: var(--accent);
+  }
+
+  /* ---------- Word scale (font-size multiplier) ---------- */
+  #word { font-size: calc(clamp(48px, 9vw, 140px) * var(--word-scale, 1)); }
+  .highway-word { font-size: calc(clamp(48px, 9vw, 140px) * var(--word-scale, 1)); }
+
+  #scaleRow {
+    display: flex; align-items: center; gap: 14px;
+  }
+  #scaleSlider {
+    flex: 1;
+    height: 22px;
+    accent-color: var(--ink);
+    -webkit-appearance: none; appearance: none;
+    background: transparent;
+  }
+  #scaleSlider::-webkit-slider-runnable-track { height: 1px; background: var(--rule); }
+  #scaleSlider::-moz-range-track { height: 1px; background: var(--rule); }
+  #scaleSlider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--paper);
+    border: 1.5px solid var(--ink);
+    margin-top: -7px;
+    cursor: pointer;
+  }
+  #scaleSlider::-moz-range-thumb {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--paper);
+    border: 1.5px solid var(--ink);
+    cursor: pointer;
+  }
+  #scaleLabel {
+    font-family: var(--grotesk);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-variant-numeric: tabular-nums;
+    min-width: 60px;
+    text-align: right;
+  }
+
+  /* ---------- Mobile landscape: collapse non-essentials so the page is the page ---------- */
+  @media (max-width: 920px) and (orientation: landscape) {
+    #folio { top: 8px; left: 14px; right: 14px; }
+    #brand { font-size: 11px; }
+    #status { font-size: 10px; }
+    #hint { display: none; }
+    #controls { padding: 6px 12px max(8px, env(safe-area-inset-bottom)); }
+    #toolbar button, #fileLabel { padding: 6px 10px; min-height: 38px; font-size: 12px; }
+    #wpmRow { gap: 10px; }
+    #progress { bottom: calc(64px + env(safe-area-inset-bottom)); }
+    body.reading #folio { opacity: 0; transition: opacity 600ms ease; pointer-events: none; }
+    body.reading #controls { opacity: 0.18; transition: opacity 600ms ease; }
+    body.reading #controls:hover, body.reading #controls:focus-within { opacity: 1; }
+  }
 </style>
 </head>
 <body class="empty">
@@ -1001,6 +1142,26 @@
             <span class="mode-name">Highway</span>
             <span class="mode-desc">Words pass by like cars at speed. The eye holds still; the language drives.</span>
           </button>
+        </div>
+      </div>
+      <div class="settings-section" id="highwaySection">
+        <span class="settings-eyebrow">Highway · style</span>
+        <div id="highwayStyle">
+          <button class="hw-btn" data-style="sentence">
+            <span class="mode-name">Sentence</span>
+            <span class="mode-desc">A continuous ribbon of language at a steady pace. Words read as a phrase, not a flicker.</span>
+          </button>
+          <button class="hw-btn" data-style="cars">
+            <span class="mode-name">Cars</span>
+            <span class="mode-desc">Discrete words, each spawned to the WPM. Travel time fixed; long words sweep faster.</span>
+          </button>
+        </div>
+      </div>
+      <div class="settings-section">
+        <span class="settings-eyebrow">Word size</span>
+        <div id="scaleRow">
+          <input id="scaleSlider" type="range" min="50" max="220" value="100" step="5" aria-label="Word scale">
+          <span id="scaleLabel">1.00×</span>
         </div>
       </div>
     </div>
@@ -1124,25 +1285,51 @@
   const VALID_MODES = ["flash", "fade", "highway"];
   let transitionMode = localStorage.getItem(TRANSITION_KEY);
   if (!VALID_MODES.includes(transitionMode)) transitionMode = "fade";
+  // ---- Highway style (cars vs continuous sentence ribbon) ----
+  const HIGHWAY_STYLE_KEY = "speading:highwayStyle";
+  const VALID_HW_STYLES = ["sentence", "cars"];
+  let highwayStyle = localStorage.getItem(HIGHWAY_STYLE_KEY);
+  if (!VALID_HW_STYLES.includes(highwayStyle)) highwayStyle = "sentence";
+  function isRibbon() { return transitionMode === "highway" && highwayStyle === "sentence"; }
+
   function applyTransitionMode() {
     document.body.classList.remove("mode-flash", "mode-fade", "mode-highway");
+    document.body.classList.remove("style-sentence", "style-cars");
     document.body.classList.add("mode-" + transitionMode);
+    document.body.classList.add("style-" + highwayStyle);
     document.querySelectorAll("#modePicker .mode-btn").forEach((b) => {
       b.setAttribute("aria-pressed", b.dataset.mode === transitionMode ? "true" : "false");
+    });
+    document.querySelectorAll("#highwayStyle .hw-btn").forEach((b) => {
+      b.setAttribute("aria-pressed", b.dataset.style === highwayStyle ? "true" : "false");
     });
   }
   function setTransitionMode(m) {
     if (!VALID_MODES.includes(m)) return;
+    const wasPlaying = playing;
+    if (wasPlaying) pause();
     transitionMode = m;
     try { localStorage.setItem(TRANSITION_KEY, m); } catch {}
     applyTransitionMode();
-    if (m !== "highway") {
-      // clear any in-flight highway words
-      while (highwayLane.firstChild) highwayLane.removeChild(highwayLane.firstChild);
-    }
+    destroyRibbon();
+    while (highwayLane.firstChild) highwayLane.removeChild(highwayLane.firstChild);
+    if (words.length) showWord();
+    if (wasPlaying) play();
+  }
+  function setHighwayStyle(s) {
+    if (!VALID_HW_STYLES.includes(s)) return;
+    const wasPlaying = playing;
+    if (wasPlaying) pause();
+    highwayStyle = s;
+    try { localStorage.setItem(HIGHWAY_STYLE_KEY, s); } catch {}
+    applyTransitionMode();
+    destroyRibbon();
+    while (highwayLane.firstChild) highwayLane.removeChild(highwayLane.firstChild);
+    if (words.length && transitionMode === "highway") showWord();
+    if (wasPlaying) play();
   }
 
-  // Highway: spawn a single word that slides from off-right to off-left.
+  // ---- Highway · Cars: spawn one word that slides off-right to off-left ----
   function spawnHighwayWord(w) {
     const span = document.createElement("span");
     span.className = "highway-word";
@@ -1150,17 +1337,131 @@
     const dur = Math.max(220, intervalMs() * 1.6);
     span.style.animationDuration = dur + "ms";
     highwayLane.appendChild(span);
-    // Auto-cleanup once it has cleared the screen
     setTimeout(() => { if (span.parentNode) span.remove(); }, dur + 80);
+  }
+
+  // ---- Highway · Sentence: continuous ribbon at constant px/sec ----
+  let hw = null;
+  function ribbonPxPerSec() {
+    // ~0.24 vw per WPM at 300 WPM looks roughly right; scale with viewport.
+    const wpm = parseInt(wpmEl.value, 10) || 300;
+    return Math.max(80, wpm * (window.innerWidth / 420));
+  }
+  function ensureRibbon() {
+    if (hw) return;
+    const ribbon = document.createElement("div");
+    ribbon.className = "highway-ribbon";
+    highwayLane.innerHTML = "";
+    highwayLane.appendChild(ribbon);
+    hw = {
+      ribbon,
+      leftIdx: idx,
+      rightIdx: idx - 1,
+      offsetPx: 0,
+      startX: 0,
+      lastTime: performance.now(),
+      raf: null,
+    };
+    hwFill();
+    hwCenterIdx(idx, /*preserveOffset*/ false);
+    hw.raf = requestAnimationFrame(hwFrame);
+  }
+  function destroyRibbon() {
+    if (!hw) return;
+    if (hw.raf) cancelAnimationFrame(hw.raf);
+    if (hw.ribbon && hw.ribbon.parentNode) hw.ribbon.parentNode.removeChild(hw.ribbon);
+    hw = null;
+  }
+  function hwApply() {
+    if (!hw) return;
+    hw.ribbon.style.transform = "translate(" + (hw.startX - hw.offsetPx) + "px, -50%)";
+  }
+  function hwFill() {
+    if (!hw) return;
+    while (hw.rightIdx + 1 < words.length) {
+      const r = hw.ribbon.getBoundingClientRect();
+      if (r.right > window.innerWidth + 200) break;
+      const i = hw.rightIdx + 1;
+      const span = document.createElement("span");
+      span.className = "hw-w";
+      renderFocal(words[i], span);
+      span.dataset.i = i;
+      hw.ribbon.appendChild(span);
+      hw.rightIdx = i;
+    }
+  }
+  function hwPrune() {
+    if (!hw) return;
+    while (hw.ribbon.firstChild) {
+      const r = hw.ribbon.firstChild.getBoundingClientRect();
+      if (r.right < -200) {
+        hw.ribbon.removeChild(hw.ribbon.firstChild);
+        hw.leftIdx++;
+      } else break;
+    }
+  }
+  function hwSyncIdx() {
+    if (!hw) return;
+    const cx = window.innerWidth / 2;
+    for (const child of hw.ribbon.children) {
+      const r = child.getBoundingClientRect();
+      if (r.left <= cx && r.right >= cx) {
+        const wIdx = parseInt(child.dataset.i, 10);
+        if (Number.isFinite(wIdx) && wIdx !== idx) {
+          idx = wIdx;
+          bar.style.width = (idx / Math.max(1, words.length - 1) * 100).toFixed(2) + "%";
+          statusEl.textContent =
+            (idx + 1).toLocaleString() + " / " + words.length.toLocaleString() +
+            "  ·  " + (pageOf(idx) + 1) + " of " + pageCount();
+          saveProgress();
+        }
+        return;
+      }
+    }
+  }
+  function hwCenterIdx(targetIdx, preserveOffset) {
+    if (!hw) return;
+    if (targetIdx < hw.leftIdx || targetIdx > hw.rightIdx) {
+      hw.ribbon.innerHTML = "";
+      hw.leftIdx = targetIdx;
+      hw.rightIdx = targetIdx - 1;
+      if (!preserveOffset) hw.offsetPx = 0;
+      hwFill();
+    }
+    let span = null;
+    for (const c of hw.ribbon.children) {
+      if (parseInt(c.dataset.i, 10) === targetIdx) { span = c; break; }
+    }
+    if (!span) return;
+    const targetCenter = window.innerWidth / 2;
+    hw.startX = targetCenter - span.offsetLeft - span.offsetWidth / 2 + hw.offsetPx;
+    hwApply();
+  }
+  function hwFrame(t) {
+    if (!hw) return;
+    const dt = Math.min(0.1, (t - hw.lastTime) / 1000);
+    hw.lastTime = t;
+    if (playing && words.length) {
+      hw.offsetPx += dt * ribbonPxPerSec();
+      hwApply();
+      hwFill();
+      hwPrune();
+      hwSyncIdx();
+      if (idx >= words.length - 1) pause();
+    }
+    if (hw) hw.raf = requestAnimationFrame(hwFrame);
   }
 
   function showWord() {
     const w = words[idx];
     if (!w) return;
-    if (reducedMotion || transitionMode === "flash") {
-      renderFocal(w);
+    if (isRibbon()) {
+      ensureRibbon();
+      hwCenterIdx(idx, /*preserveOffset*/ true);
     } else if (transitionMode === "highway") {
       spawnHighwayWord(w);
+    } else if (reducedMotion || transitionMode === "flash") {
+      renderFocal(w);
     } else { // fade
       wordEl.style.opacity = "0";
       setTimeout(() => {
@@ -1189,13 +1490,21 @@
     playing = true;
     document.body.classList.add("reading");
     playBtn.textContent = "Pause";
-    timer = setTimeout(tick, intervalMs());
+    if (isRibbon()) {
+      ensureRibbon();
+      hw.lastTime = performance.now();
+      // RAF already running; advances will pick up because playing is now true
+    } else {
+      timer = setTimeout(tick, intervalMs());
+    }
+    maybeFullscreen();
   }
   function pause() {
     playing = false;
     document.body.classList.remove("reading");
     playBtn.textContent = "Read";
     if (timer) { clearTimeout(timer); timer = null; }
+    // Keep ribbon DOM in place; RAF stays alive but stops accumulating offset
   }
   function toggle() { playing ? pause() : play(); }
 
@@ -1323,7 +1632,63 @@
     if (!btn) return;
     setTransitionMode(btn.dataset.mode);
   });
+  document.getElementById("highwayStyle").addEventListener("click", (e) => {
+    const btn = e.target.closest(".hw-btn");
+    if (!btn) return;
+    setHighwayStyle(btn.dataset.style);
+  });
   applyTransitionMode();
+
+  // ---- Word scale slider ----
+  const SCALE_KEY = "speading:scale";
+  const scaleSlider = document.getElementById("scaleSlider");
+  const scaleLabel = document.getElementById("scaleLabel");
+  function applyScale(v) {
+    const s = (v / 100).toFixed(2);
+    document.documentElement.style.setProperty("--word-scale", s);
+    scaleLabel.textContent = s + "×";
+    if (isRibbon() && hw) hwCenterIdx(idx, /*preserveOffset*/ true);
+  }
+  const savedScale = parseInt(localStorage.getItem(SCALE_KEY), 10);
+  if (Number.isFinite(savedScale) && savedScale >= 50 && savedScale <= 220) {
+    scaleSlider.value = savedScale;
+  }
+  applyScale(parseInt(scaleSlider.value, 10));
+  function onScaleChange() {
+    const v = parseInt(scaleSlider.value, 10);
+    applyScale(v);
+    try { localStorage.setItem(SCALE_KEY, v); } catch {}
+  }
+  scaleSlider.addEventListener("input", onScaleChange);
+  scaleSlider.addEventListener("change", onScaleChange);
+
+  // ---- Mobile landscape: try to enter fullscreen so the URL bar is gone ----
+  const isTouch = matchMedia("(hover: none) and (pointer: coarse)").matches
+    || ("ontouchstart" in window);
+  function maybeFullscreen() {
+    if (!isTouch) return;
+    if (document.fullscreenElement || document.webkitFullscreenElement) return;
+    // Only auto-enter in landscape
+    if (window.innerHeight > window.innerWidth) return;
+    const el = document.documentElement;
+    const req = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (!req) {
+      // iOS Safari: nudge URL bar away by scrolling 1px
+      window.scrollTo(0, 1);
+      return;
+    }
+    try { req.call(el).catch(() => {}); } catch {}
+  }
+  // Ribbon needs to recompute on rotate / resize
+  window.addEventListener("resize", () => {
+    if (isRibbon() && hw) hwCenterIdx(idx, /*preserveOffset*/ true);
+  });
+  window.addEventListener("orientationchange", () => {
+    setTimeout(() => {
+      if (isTouch && window.innerWidth > window.innerHeight) maybeFullscreen();
+      if (isRibbon() && hw) hwCenterIdx(idx, /*preserveOffset*/ true);
+    }, 200);
+  });
   back10Btn.addEventListener("click", () => {
     if (!words.length) return;
     idx = Math.max(0, idx - 10);
