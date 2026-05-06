@@ -44,7 +44,11 @@
 
   html, body {
     margin: 0; padding: 0;
-    height: 100%; width: 100%;
+    width: 100%;
+    /* 100% works on legacy browsers; 100dvh tracks iOS/Android URL-bar
+       collapse so the visible viewport always fills exactly. */
+    height: 100%;
+    height: 100dvh;
     background: var(--paper);
     color: var(--ink);
     font-family: var(--serif);
@@ -1201,18 +1205,33 @@
     text-align: right;
   }
 
-  /* ---------- Mobile landscape: collapse non-essentials so the page is the page ---------- */
-  @media (max-width: 920px) and (orientation: landscape) {
-    #folio { top: 8px; left: 14px; right: 14px; }
+  /* ---------- Phone landscape: collapse non-essentials so the page is the page ----------
+     Detect by short height (any phone in landscape is ~390-490px tall) rather
+     than width — iPhone 17 / 17 Pro Max go up to 956px wide in landscape and
+     would have escaped the previous max-width: 920px rule. */
+  @media (orientation: landscape) and (max-height: 540px) {
+    #folio {
+      top: max(6px, env(safe-area-inset-top));
+      left: max(12px, env(safe-area-inset-left));
+      right: max(12px, env(safe-area-inset-right));
+    }
     #brand { font-size: 11px; }
     #status { font-size: 10px; }
     #hint { display: none; }
-    #controls { padding: 6px 12px max(8px, env(safe-area-inset-bottom)); }
-    #toolbar button, #fileLabel { padding: 6px 10px; min-height: 38px; font-size: 12px; }
-    #wpmRow { gap: 10px; }
-    #progress { bottom: calc(64px + env(safe-area-inset-bottom)); }
-    body.reading #folio { opacity: 0; transition: opacity 600ms ease; pointer-events: none; }
-    body.reading #controls { opacity: 0.18; transition: opacity 600ms ease; }
+    #controls {
+      padding: 4px max(10px, env(safe-area-inset-left)) max(6px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-right));
+      gap: 4px;
+    }
+    #toolbar { gap: 6px; }
+    #toolbar button, #fileLabel { padding: 5px 9px; min-height: 34px; font-size: 11.5px; }
+    #wpmRow { gap: 10px; padding-top: 2px; }
+    #wpmCaption, #wpmLabel { font-size: 10px; }
+    #wpm { height: 22px; }
+    #progress { bottom: calc(54px + env(safe-area-inset-bottom)); }
+    /* Big book, small screen: let the focal word breathe. */
+    #word, .highway-ribbon { font-size: calc(clamp(40px, 14vmin, 110px) * var(--word-scale, 1)); }
+    body.reading #folio { opacity: 0; transition: opacity 500ms cubic-bezier(0.32,0.72,0,1); pointer-events: none; }
+    body.reading #controls { opacity: 0.14; transition: opacity 500ms cubic-bezier(0.32,0.72,0,1); }
     body.reading #controls:hover, body.reading #controls:focus-within { opacity: 1; }
   }
 </style>
@@ -2393,19 +2412,43 @@
   // ---- Mobile landscape: try to enter fullscreen so the URL bar is gone ----
   const isTouch = matchMedia("(hover: none) and (pointer: coarse)").matches
     || ("ontouchstart" in window);
+  // iPhone Safari on iPhone (not iPad) does not honor requestFullscreen on
+  // arbitrary elements. We have to coax the URL bar into collapsing by
+  // briefly making the page scrollable, scrolling, and re-locking.
+  function urlBarCollapseTrick() {
+    const html = document.documentElement;
+    const body = document.body;
+    const prevHtml = html.style.overflow;
+    const prevBody = body.style.overflow;
+    const prevMin = body.style.minHeight;
+    html.style.overflow = "auto";
+    body.style.overflow = "auto";
+    body.style.minHeight = "calc(100dvh + 80px)";
+    // Two RAFs lets the layout settle before we scroll
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      window.scrollTo(0, 80);
+      setTimeout(() => {
+        html.style.overflow = prevHtml;
+        body.style.overflow = prevBody;
+        body.style.minHeight = prevMin;
+      }, 320);
+    }));
+  }
   function maybeFullscreen() {
     if (!isTouch) return;
-    if (document.fullscreenElement || document.webkitFullscreenElement) return;
     // Only auto-enter in landscape
     if (window.innerHeight > window.innerWidth) return;
+    if (document.fullscreenElement || document.webkitFullscreenElement) return;
     const el = document.documentElement;
     const req = el.requestFullscreen || el.webkitRequestFullscreen;
-    if (!req) {
-      // iOS Safari: nudge URL bar away by scrolling 1px
-      window.scrollTo(0, 1);
-      return;
+    if (req) {
+      try {
+        const p = req.call(el);
+        if (p && typeof p.then === "function") p.catch(() => urlBarCollapseTrick());
+        return;
+      } catch { /* fall through */ }
     }
-    try { req.call(el).catch(() => {}); } catch {}
+    urlBarCollapseTrick();
   }
   // Ribbon needs to recompute on rotate / resize. Word widths depend on
   // 9vw clamp so the cached `rights[]` array goes stale on viewport change.
