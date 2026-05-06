@@ -1220,6 +1220,12 @@
   let currentOverviewPage = 0;
 
   function rescheduleTick() {
+    // Tick is only the schedule for non-ribbon modes. In ribbon mode the
+    // RAF loop drives idx, and reading WPM changes are picked up live by
+    // ribbonPxPerSec(). Without this guard, tick() would fire alongside the
+    // RAF loop and yank the ribbon back to the current idx every interval —
+    // visually, words flash and vanish as the two loops fight.
+    if (typeof isRibbon === "function" && isRibbon()) return;
     if (playing) { clearTimeout(timer); timer = setTimeout(tick, intervalMs()); }
   }
 
@@ -1378,9 +1384,12 @@
   }
   function hwFill() {
     if (!hw) return;
+    // Buffer ~1.5 viewports of upcoming words so iOS Safari, which can throttle
+    // RAF during URL-bar transitions, never runs the right edge dry.
+    const headroom = Math.max(800, window.innerWidth * 1.5);
     while (hw.rightIdx + 1 < words.length) {
       const r = hw.ribbon.getBoundingClientRect();
-      if (r.right > window.innerWidth + 200) break;
+      if (r.right > window.innerWidth + headroom) break;
       const i = hw.rightIdx + 1;
       const span = document.createElement("span");
       span.className = "hw-w";
@@ -1392,10 +1401,21 @@
   }
   function hwPrune() {
     if (!hw) return;
-    while (hw.ribbon.firstChild) {
-      const r = hw.ribbon.firstChild.getBoundingClientRect();
-      if (r.right < -200) {
-        hw.ribbon.removeChild(hw.ribbon.firstChild);
+    // Only prune words that have left the screen by a generous margin so the
+    // ribbon never shows a visible gap on the left during scroll.
+    const margin = Math.max(600, window.innerWidth * 0.8);
+    while (hw.ribbon.firstChild && hw.ribbon.children.length > 1) {
+      const first = hw.ribbon.firstChild;
+      const r = first.getBoundingClientRect();
+      if (r.right < -margin) {
+        // Removing the first child shifts every other span's offsetLeft to the
+        // left by exactly the second child's current offsetLeft. Counter the
+        // shift in offsetPx so the visual position is preserved (otherwise the
+        // remaining content jerks left by one word's worth on every prune).
+        const next = hw.ribbon.children[1];
+        const consumed = next ? next.offsetLeft : first.offsetWidth;
+        hw.offsetPx -= consumed;
+        hw.ribbon.removeChild(first);
         hw.leftIdx++;
       } else break;
     }
@@ -1443,9 +1463,9 @@
     hw.lastTime = t;
     if (playing && words.length) {
       hw.offsetPx += dt * ribbonPxPerSec();
-      hwApply();
       hwFill();
-      hwPrune();
+      hwPrune();   // may decrement offsetPx to compensate for removed spans
+      hwApply();   // apply transform LAST so it reflects post-prune offsetPx
       hwSyncIdx();
       if (idx >= words.length - 1) pause();
     }
