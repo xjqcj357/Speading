@@ -1739,18 +1739,50 @@
     || ("ontouchstart" in window);
   if (isTouchDev) {
     let tStart = null, tMoved = false;
+    let pinch = null; // { dist, scale }
     const SWIPE = 40;
+    const dist2 = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
     stage.addEventListener("touchstart", (e) => {
+      if (e.touches.length === 2) {
+        // Begin pinch — cancel any in-flight swipe so it doesn't trip on
+        // touchend when the user lifts both fingers.
+        tStart = null;
+        pinch = {
+          dist: dist2(e.touches[0], e.touches[1]),
+          scale: parseInt(scaleSlider.value, 10) || 100,
+        };
+        return;
+      }
       if (e.touches.length !== 1) { tStart = null; return; }
       tStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
       tMoved = false;
     }, { passive: true });
     stage.addEventListener("touchmove", (e) => {
+      if (pinch && e.touches.length === 2) {
+        const d = dist2(e.touches[0], e.touches[1]);
+        const ratio = d / pinch.dist;
+        const next = Math.max(50, Math.min(220, Math.round(pinch.scale * ratio)));
+        if (next !== parseInt(scaleSlider.value, 10)) {
+          scaleSlider.value = next;
+          applyScale(next);
+        }
+        return;
+      }
       if (!tStart || e.touches.length !== 1) return;
       const t = e.touches[0];
       if (Math.abs(t.clientX - tStart.x) > 8 || Math.abs(t.clientY - tStart.y) > 8) tMoved = true;
     }, { passive: true });
     stage.addEventListener("touchend", (e) => {
+      if (pinch) {
+        // End of pinch (one or both fingers lifted): commit and persist.
+        if (e.touches.length < 2) {
+          try { localStorage.setItem(SCALE_KEY, scaleSlider.value); } catch {}
+          pinch = null;
+          tStart = null; // suppress any swipe interpretation on the lingering finger
+          e.preventDefault();
+        }
+        return;
+      }
       if (!tStart || !words.length) { tStart = null; return; }
       const t = e.changedTouches && e.changedTouches[0];
       const start = tStart; tStart = null;
