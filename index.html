@@ -56,6 +56,16 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
+    overscroll-behavior: none;   /* no pull-to-refresh, no rubber-banding */
+  }
+  /* iOS Safari URL-bar collapse trick: on touch devices, let the document be
+     ~80px taller than the visible viewport. Once we scrollTo(0, 80) on a user
+     gesture, iOS minimizes the URL bar and keeps it minimized because the page
+     is sitting at scroll offset > 0. The position:fixed UI doesn't move. */
+  @media (hover: none) and (pointer: coarse) {
+    html { overflow: auto; -webkit-overflow-scrolling: auto; }
+    html, body { height: auto; min-height: 100dvh; }
+    body { min-height: calc(100dvh + 80px); }
   }
 
   /* A faint grain — woven paper, not a gradient */
@@ -2413,25 +2423,12 @@
   const isTouch = matchMedia("(hover: none) and (pointer: coarse)").matches
     || ("ontouchstart" in window);
   // iPhone Safari on iPhone (not iPad) does not honor requestFullscreen on
-  // arbitrary elements. We have to coax the URL bar into collapsing by
-  // briefly making the page scrollable, scrolling, and re-locking.
+  // arbitrary elements. The CSS for touch devices keeps the document ~80px
+  // taller than the visible viewport — programmatically scrolling once is
+  // enough to make iOS collapse the URL bar and leave it collapsed.
   function urlBarCollapseTrick() {
-    const html = document.documentElement;
-    const body = document.body;
-    const prevHtml = html.style.overflow;
-    const prevBody = body.style.overflow;
-    const prevMin = body.style.minHeight;
-    html.style.overflow = "auto";
-    body.style.overflow = "auto";
-    body.style.minHeight = "calc(100dvh + 80px)";
-    // Two RAFs lets the layout settle before we scroll
     requestAnimationFrame(() => requestAnimationFrame(() => {
       window.scrollTo(0, 80);
-      setTimeout(() => {
-        html.style.overflow = prevHtml;
-        body.style.overflow = prevBody;
-        body.style.minHeight = prevMin;
-      }, 320);
     }));
   }
   function maybeFullscreen() {
