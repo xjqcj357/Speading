@@ -31,6 +31,13 @@
     --grotesk: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text",
                "Segoe UI", Roboto, system-ui, sans-serif;
     --duration: 90ms;
+    /* Apple-grade canonical curves. The first is the deceleration curve used
+       throughout iOS / macOS for things that travel: zero acceleration at the
+       finish, a long settle. The second is a softer in-out for ambient state
+       changes (panel open/close). */
+    --ease-out-apple: cubic-bezier(0.32, 0.72, 0, 1);
+    --ease-in-out-apple: cubic-bezier(0.65, 0, 0.35, 1);
+    --ease-overshoot: cubic-bezier(0.34, 1.36, 0.64, 1);
   }
 
   * { box-sizing: border-box; }
@@ -82,7 +89,13 @@
     -webkit-user-select: none;
     -webkit-tap-highlight-color: transparent;
     z-index: 2;
+    /* Pointer Events claim every gesture: pinch, wheel, drag-scrub. The
+       browser's native page-level scroll/zoom on the stage is in the way. */
+    touch-action: none;
+    overscroll-behavior: contain;
   }
+  body.scrubbing #stage { cursor: grabbing; }
+  body:not(.reading):not(.empty):not(.loading) #stage { cursor: grab; }
 
   /* The reticle — a single horizontal hairline marking the optical
      baseline. The eye lands on it; the word sits on it. */
@@ -481,7 +494,14 @@
     border-bottom: 1px solid var(--accent);
   }
 
-  /* ---------- Browse overlay — the typeset page ---------- */
+  /* ---------- Browse overlay — the filmstrip overview ---------- */
+  /*
+    Browse is a continuous, pinch-zoomable filmstrip of typeset pages. The
+    user scrubs through the book at any zoom level — from a single page
+    filling the screen, through a row of thumbnails, all the way out to a
+    heatmap of the whole book showing where they've already been. Tap a
+    page to enter it; tap a word to jump there.
+  */
 
   #overview {
     position: fixed; inset: 0;
@@ -490,8 +510,15 @@
     display: none;
     flex-direction: column;
     z-index: 15;
+    opacity: 0;
+    transform: translate3d(0, 0, 0) scale(0.96);
+    transform-origin: 50% 50%;
+    transition: opacity 380ms var(--ease-out-apple),
+                transform 460ms var(--ease-out-apple);
+    will-change: transform, opacity;
   }
-  #overview.open { display: flex; }
+  #overview.visible { display: flex; }
+  #overview.open { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
   #overview::before {
     /* page texture */
     content: "";
@@ -501,21 +528,24 @@
     background-size: 4px 4px;
     pointer-events: none;
     mix-blend-mode: multiply;
+    z-index: 1;
   }
 
   #ovHeader {
     position: relative;
-    padding: max(20px, env(safe-area-inset-top))
-             max(28px, env(safe-area-inset-left))
-             14px
-             max(28px, env(safe-area-inset-right));
+    padding: max(16px, env(safe-area-inset-top))
+             max(24px, env(safe-area-inset-left))
+             10px
+             max(24px, env(safe-area-inset-right));
     border-bottom: 1px solid var(--rule);
     font-family: var(--grotesk);
+    z-index: 3;
+    background: var(--paper);
   }
   #ovTitleRow {
     display: flex; align-items: baseline; justify-content: space-between;
     gap: 16px;
-    margin-bottom: 12px;
+    margin-bottom: 8px;
   }
   #ovTitle {
     font-family: var(--serif);
@@ -564,9 +594,9 @@
     background: transparent;
     color: var(--ink);
     border: none;
-    padding: 10px 8px;
-    min-height: 44px;
-    min-width: 44px;
+    padding: 8px 8px;
+    min-height: 40px;
+    min-width: 40px;
     font-family: var(--grotesk);
     font-size: 11px;
     font-weight: 500;
@@ -576,16 +606,17 @@
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
     position: relative;
+    transition: color 160ms ease;
   }
   #ovHeader button::after {
     content: "";
     position: absolute;
     left: 8px; right: 8px;
-    bottom: 6px;
+    bottom: 4px;
     height: 1px;
     background: var(--ink);
     transform: scaleX(0);
-    transition: transform 200ms ease;
+    transition: transform 240ms var(--ease-out-apple);
   }
   #ovHeader button:hover::after { transform: scaleX(1); }
   #ovHeader #ovJump {
@@ -605,7 +636,7 @@
   #ovNav .spacer { flex: 1; }
   #ovPage {
     flex: 1 1 100%;
-    margin-top: 10px;
+    margin-top: 8px;
     height: 22px;
     accent-color: var(--ink);
     -webkit-appearance: none;
@@ -622,7 +653,9 @@
     border: 1.5px solid var(--ink);
     margin-top: -6px;
     cursor: pointer;
+    transition: transform 200ms var(--ease-out-apple);
   }
+  #ovPage::-webkit-slider-thumb:active { transform: scale(1.3); background: var(--ink); }
   #ovPage::-moz-range-thumb {
     width: 12px; height: 12px;
     border-radius: 50%;
@@ -631,59 +664,141 @@
     cursor: pointer;
   }
 
+  /* The body is a horizontally-scrolling filmstrip of pages. Each page is
+     a tile sized by the current zoom; large means a single readable page,
+     small means thumbnails or even a heatmap. JS virtualizes the contents
+     of tiles outside the viewport so the DOM stays light no matter how
+     long the book is. */
   #ovBody {
     position: relative;
     flex: 1;
-    overflow-y: auto;
-    padding: 48px max(28px, 6vw) calc(48px + env(safe-area-inset-bottom));
+    overflow: hidden;
+    background: var(--paper-deep);
+    z-index: 2;
+    /* Pointer-events drive scroll, pinch and tap; native scroll suppressed. */
+    touch-action: none;
+    overscroll-behavior: contain;
+    cursor: grab;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  body.scrubbing #ovBody { cursor: grabbing; }
+  /* The strip — a single absolutely-positioned row that we transform
+     horizontally with translate3d. Vertical centering via flex.
+     The row's width is computed in JS from pageCount × tileWidth. */
+  #ovStrip {
+    position: absolute;
+    top: 0; left: 0;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    will-change: transform;
+    transform: translate3d(0, 0, 0);
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+  }
+  #ovStrip .tile {
+    flex: 0 0 auto;
+    box-sizing: border-box;
+    width: var(--ov-tile-w, 240px);
+    height: var(--ov-tile-h, 320px);
+    margin-right: var(--ov-gap, 14px);
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    box-shadow: 0 1px 0 rgba(28,24,22,0.04),
+                0 12px 28px -14px rgba(60,30,10,0.18);
+    overflow: hidden;
+    position: relative;
+    cursor: pointer;
+    color: var(--ink);
     font-family: var(--serif);
-    font-size: clamp(17px, 2.2vw, 19px);
-    line-height: 1.7;
-    max-width: 64ch;
-    margin: 0 auto;
-    width: 100%;
+    transition: box-shadow 280ms var(--ease-out-apple),
+                transform 280ms var(--ease-out-apple);
+  }
+  #ovStrip .tile:last-child { margin-right: 0; }
+  body.ov-heat #ovStrip .tile { box-shadow: none; border: none; border-radius: 1px; }
+  #ovStrip .tile.read::after {
+    /* Faint marginalia tint to show "you've been here". */
+    content: "";
+    position: absolute; inset: 0;
+    background: rgba(138, 42, 31, 0.05);
+    pointer-events: none;
+  }
+  #ovStrip .tile.current {
+    box-shadow: 0 0 0 2px var(--ink),
+                0 1px 0 rgba(28,24,22,0.04),
+                0 18px 36px -16px rgba(60,30,10,0.28);
+    transform: translateY(-2px);
+    z-index: 2;
+  }
+  /* In the deepest zoom-out the tiles collapse to colored bands:
+     a heatmap of where you've been. */
+  body.ov-heat #ovStrip .tile { background: var(--paper); }
+  body.ov-heat #ovStrip .tile.read { background: var(--ink-soft); }
+  body.ov-heat #ovStrip .tile.current { background: var(--accent); }
+  body.ov-heat #ovStrip .tile .folio { display: none; }
+
+  /* Page contents inside a tile. Only the pages near the viewport get
+     populated (virtualization); empty tiles show a folio number only. */
+  #ovStrip .tile .pg {
+    position: absolute;
+    inset: 0;
+    padding: 6%;
+    overflow: hidden;
+    line-height: 1.45;
     text-align: justify;
     text-justify: inter-word;
     hyphens: auto;
     -webkit-hyphens: auto;
-    -webkit-overflow-scrolling: touch;
     color: var(--ink);
-    z-index: 1;
     font-feature-settings: "kern" 1, "liga" 1, "onum" 1;
+    text-rendering: optimizeLegibility;
+    /* Font scales with tile width via the strip's --ov-tile-w CSS var. */
+    font-size: clamp(2.4px, calc(var(--ov-tile-w, 280px) * 0.046), 16px);
   }
-  /* Drop cap on the first word of each browse page */
-  #ovBody .w:first-child {
-    /* dropcap target — set in JS-rendered first letter */
+  #ovStrip .tile .folio {
+    position: absolute;
+    bottom: 8px; left: 0; right: 0;
+    text-align: center;
+    font-family: var(--grotesk);
+    font-size: clamp(8px, calc(var(--ov-tile-w, 280px) * 0.038), 11px);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
   }
-  #ovBody .firstchar {
-    float: left;
-    font-family: var(--serif);
-    font-size: 3.4em;
-    line-height: 0.85;
-    padding: 0.08em 0.06em 0 0;
-    margin-right: 0.04em;
-    color: var(--ink);
-    font-weight: 400;
-  }
-  #ovBody .w {
+  #ovStrip .tile .pg .w {
     cursor: pointer;
-    padding: 1px 1px;
-    border-radius: 2px;
-    -webkit-tap-highlight-color: rgba(27,24,20,0.08);
-    transition: background 120ms ease;
+    padding: 0 1px;
+    border-radius: 1px;
   }
-  #ovBody .w:hover {
-    background: var(--paper-deep);
-  }
-  #ovBody .w.current {
+  #ovStrip .tile .pg .w:hover { background: var(--paper-deep); }
+  #ovStrip .tile .pg .w.current {
     background: var(--ink);
     color: var(--paper);
-    box-shadow: 0 0 0 2px var(--ink);
   }
-  #ovBody .w.read { color: var(--ink-faint); }
+  #ovStrip .tile .pg .w.read { color: var(--ink-faint); }
+  /* When zoom is small enough that the page becomes a thumbnail, drop the
+     interactive word styling and let the lines blur into texture. */
+  body.ov-thumb #ovStrip .tile .pg .w { cursor: default; }
+  body.ov-thumb #ovStrip .tile .pg .w:hover { background: transparent; }
+  /* The reticle: a horizontal hairline locked to the center of the strip,
+     showing which page is "current" under the playhead. */
+  #ovReticle {
+    position: absolute;
+    top: 0; bottom: 0;
+    left: 50%;
+    width: 1px;
+    background: var(--accent);
+    opacity: 0.6;
+    pointer-events: none;
+    z-index: 4;
+    transform: translateX(-0.5px);
+  }
 
   #ovFooter {
-    padding: 14px 24px max(14px, env(safe-area-inset-bottom));
+    padding: 10px 24px max(10px, env(safe-area-inset-bottom));
     border-top: 1px solid var(--rule);
     color: var(--ink-faint);
     font-family: var(--serif);
@@ -691,6 +806,18 @@
     font-size: 12px;
     text-align: center;
     letter-spacing: 0.01em;
+    background: var(--paper);
+    z-index: 3;
+    position: relative;
+  }
+  #ovZoomCaption {
+    margin-left: 6px;
+    color: var(--ink-soft);
+    font-style: normal;
+    font-family: var(--grotesk);
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
   }
 
   /* ---------- Mobile adjustments ---------- */
@@ -711,7 +838,6 @@
     #hint { bottom: calc(160px + env(safe-area-inset-bottom)); }
     #progress { bottom: calc(140px + env(safe-area-inset-bottom)); }
     #ovHeader { padding-left: 18px; padding-right: 18px; }
-    #ovBody { padding: 32px 22px calc(32px + env(safe-area-inset-bottom)); }
   }
 
   @media (max-width: 380px) {
@@ -721,6 +847,8 @@
 
   @media (prefers-reduced-motion: reduce) {
     #word { transition: none; }
+    #settings, #settingsCard, #overview { transition: none !important; }
+    #ovStrip .tile { transition: none !important; }
   }
 
   /* ---------- Settings link in folio ---------- */
@@ -755,17 +883,25 @@
   #settings {
     position: fixed;
     inset: 0;
-    background: rgba(28, 24, 22, 0.32);
-    backdrop-filter: blur(2px);
-    -webkit-backdrop-filter: blur(2px);
+    background: rgba(28, 24, 22, 0.0);
+    backdrop-filter: blur(0px);
+    -webkit-backdrop-filter: blur(0px);
     display: none;
     align-items: center;
     justify-content: center;
     z-index: 80;
     padding: 24px;
     box-sizing: border-box;
+    transition: background 420ms var(--ease-out-apple),
+                backdrop-filter 420ms var(--ease-out-apple),
+                -webkit-backdrop-filter 420ms var(--ease-out-apple);
   }
-  #settings.open { display: flex; }
+  #settings.visible { display: flex; }
+  #settings.open {
+    background: rgba(28, 24, 22, 0.32);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+  }
   #settingsCard {
     background: var(--paper);
     color: var(--ink);
@@ -778,6 +914,15 @@
     padding: 28px 32px 32px;
     box-sizing: border-box;
     -webkit-overflow-scrolling: touch;
+    transform: translate3d(0, 18px, 0) scale(0.985);
+    opacity: 0;
+    transition: transform 460ms var(--ease-out-apple),
+                opacity 320ms var(--ease-out-apple);
+    will-change: transform, opacity;
+  }
+  #settings.open #settingsCard {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 1;
   }
   #settingsHeader {
     display: flex; align-items: baseline; justify-content: space-between;
@@ -896,6 +1041,8 @@
     white-space: nowrap;
     color: var(--ink);
     font-feature-settings: "kern" 1, "liga" 1, "calt" 1, "onum" 1;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
     transform: translate3d(110vw, -50%, 0);
     will-change: transform;
     animation-name: highway-pass;
@@ -925,7 +1072,9 @@
     position: absolute;
     top: 50%;
     left: 0;
-    transform: translate(0, -50%);
+    /* Vertical centering moved to translate3d in JS so the GPU-composited
+       layer's transform isn't fighting a non-3d translate(). */
+    transform: translate3d(0, -50%, 0);
     white-space: nowrap;
     font-family: var(--serif);
     font-weight: 500;
@@ -933,7 +1082,13 @@
     line-height: 1;
     color: var(--ink);
     font-feature-settings: "kern" 1, "liga" 1, "calt" 1, "onum" 1;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
     will-change: transform;
+    /* Force a GPU layer up front; avoids the first-frame promotion stall on
+       slower devices when reading begins. */
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
   }
   .highway-ribbon .hw-w { display: inline-block; margin-right: 0.45em; }
   .highway-ribbon .hw-w .orp { color: var(--accent); position: relative; }
@@ -1115,8 +1270,11 @@
       </div>
       <input id="ovPage" type="range" min="1" max="1" value="1" step="1" aria-label="Page">
     </div>
-    <div id="ovBody"></div>
-    <div id="ovFooter">Tap any word to set your reading position.</div>
+    <div id="ovBody">
+      <div id="ovStrip"></div>
+      <div id="ovReticle"></div>
+    </div>
+    <div id="ovFooter">Drag to scrub &nbsp;·&nbsp; pinch or scroll to zoom &nbsp;·&nbsp; tap a word to jump<span id="ovZoomCaption"></span></div>
   </div>
 
   <div id="drop"><span>Release to open</span></div>
@@ -1160,7 +1318,7 @@
       <div class="settings-section">
         <span class="settings-eyebrow">Word size</span>
         <div id="scaleRow">
-          <input id="scaleSlider" type="range" min="50" max="220" value="100" step="5" aria-label="Word scale">
+          <input id="scaleSlider" type="range" min="50" max="220" value="100" step="0.1" aria-label="Word scale">
           <span id="scaleLabel">1.00×</span>
         </div>
       </div>
@@ -1347,6 +1505,22 @@
   }
 
   // ---- Highway · Sentence: continuous ribbon at constant px/sec ----
+  //
+  // Hot-path discipline: NO getBoundingClientRect() per frame.
+  // We track every visible span's right-edge offset in JS (cumulative width
+  // since the ribbon's left origin) and a single `offsetPx` scrolls them
+  // collectively via translate3d. Center detection is a binary-ish walk over
+  // those cached offsets — never a layout read.
+  //
+  // Buffer policy: 8 viewports of pre-rendered words to the right, capped at
+  // RIBBON_MAX_SPANS. Spans are cheap; iOS Safari throttling during URL-bar
+  // transitions or low-power can drop us to 30Hz briefly, and the ribbon must
+  // not run dry. Pruning is loose (4 viewports of margin on the left) so a
+  // brief drag-back doesn't expose a gap.
+  const RIBBON_HEADROOM_VW = 8;        // viewports of words to keep rendered to the right
+  const RIBBON_LEFT_MARGIN_VW = 4;     // viewports of trailing words to keep before pruning
+  const RIBBON_MAX_SPANS = 50000;      // hard cap; spans are cheap but DOM isn't infinite
+
   let hw = null;
   function ribbonPxPerSec() {
     // ~0.24 vw per WPM at 300 WPM looks roughly right; scale with viewport.
@@ -1361,12 +1535,18 @@
     highwayLane.appendChild(ribbon);
     hw = {
       ribbon,
-      leftIdx: idx,
-      rightIdx: idx - 1,
-      offsetPx: 0,
-      startX: 0,
+      leftIdx: idx,        // word index of ribbon.firstChild (when populated)
+      rightIdx: idx - 1,   // word index of ribbon.lastChild
+      // Cached cumulative right-edge offsets, parallel to ribbon.children.
+      // rights[i] = sum of widths of children[0..i] including margin-right.
+      // The left edge of children[i] is rights[i-1] (or 0 for i=0).
+      rights: [],
+      offsetPx: 0,         // how many px the ribbon has scrolled to the left
+      startX: 0,           // additional translate to put leftIdx's center at the screen center
       lastTime: performance.now(),
       raf: null,
+      // Margin between words in px, sampled on first append.
+      gapPx: 0,
     };
     hwFill();
     hwCenterIdx(idx, /*preserveOffset*/ false);
@@ -1380,82 +1560,151 @@
   }
   function hwApply() {
     if (!hw) return;
-    hw.ribbon.style.transform = "translate(" + (hw.startX - hw.offsetPx) + "px, -50%)";
+    // translate3d keeps the ribbon on its own GPU layer.
+    hw.ribbon.style.transform =
+      "translate3d(" + (hw.startX - hw.offsetPx).toFixed(2) + "px, -50%, 0)";
+  }
+  function hwAppend(i) {
+    // Append a word span for index i and record its cumulative right edge.
+    // ONE offsetWidth read here (forced layout) — but only on append, never
+    // per frame. With an 8-viewport buffer the append rate during steady-state
+    // playback is at most ~one per word interval, not per frame.
+    const span = document.createElement("span");
+    span.className = "hw-w";
+    renderFocal(words[i], span);
+    span.dataset.i = i;
+    hw.ribbon.appendChild(span);
+    const w = span.offsetWidth;
+    // Sample the inter-word gap once. CSS sets `margin-right: 0.45em` on .hw-w;
+    // resolved as px depends on font-size which depends on --word-scale, so we
+    // read it once here and refresh on scale change via hwResetWidths().
+    if (hw.rights.length === 0) {
+      const cs = getComputedStyle(span);
+      const m = parseFloat(cs.marginRight);
+      hw.gapPx = Number.isFinite(m) ? m : 0;
+    }
+    const prev = hw.rights.length ? hw.rights[hw.rights.length - 1] : 0;
+    hw.rights.push(prev + w + hw.gapPx);
+    hw.rightIdx = i;
+  }
+  function hwResetWidths() {
+    // Recompute the cached widths of all currently-visible spans. Used on
+    // resize / scale change. Costs N offsetWidth reads (one forced layout)
+    // but only at user-driven event boundaries — not on the hot path.
+    if (!hw || !hw.ribbon.children.length) return;
+    const kids = hw.ribbon.children;
+    let acc = 0;
+    let gap = 0;
+    if (kids.length) {
+      const cs = getComputedStyle(kids[0]);
+      const m = parseFloat(cs.marginRight);
+      gap = Number.isFinite(m) ? m : 0;
+    }
+    hw.gapPx = gap;
+    const next = new Array(kids.length);
+    for (let k = 0; k < kids.length; k++) {
+      acc += kids[k].offsetWidth + gap;
+      next[k] = acc;
+    }
+    hw.rights = next;
   }
   function hwFill() {
     if (!hw) return;
-    // Buffer ~1.5 viewports of upcoming words so iOS Safari, which can throttle
-    // RAF during URL-bar transitions, never runs the right edge dry.
-    const headroom = Math.max(800, window.innerWidth * 1.5);
-    while (hw.rightIdx + 1 < words.length) {
-      const r = hw.ribbon.getBoundingClientRect();
-      if (r.right > window.innerWidth + headroom) break;
-      const i = hw.rightIdx + 1;
-      const span = document.createElement("span");
-      span.className = "hw-w";
-      renderFocal(words[i], span);
-      span.dataset.i = i;
-      hw.ribbon.appendChild(span);
-      hw.rightIdx = i;
+    const headroom = window.innerWidth * RIBBON_HEADROOM_VW;
+    // Right edge of the last span in screen coordinates (accounting for
+    // ribbon transform). leftEdgeScreen = startX - offsetPx.
+    const lastRight = hw.rights.length ? hw.rights[hw.rights.length - 1] : 0;
+    let visualRight = (hw.startX - hw.offsetPx) + lastRight;
+    while (
+      hw.rightIdx + 1 < words.length &&
+      hw.ribbon.children.length < RIBBON_MAX_SPANS &&
+      visualRight < window.innerWidth + headroom
+    ) {
+      hwAppend(hw.rightIdx + 1);
+      visualRight = (hw.startX - hw.offsetPx) + hw.rights[hw.rights.length - 1];
     }
   }
   function hwPrune() {
     if (!hw) return;
-    // Only prune words that have left the screen by a generous margin so the
-    // ribbon never shows a visible gap on the left during scroll.
-    const margin = Math.max(600, window.innerWidth * 0.8);
-    while (hw.ribbon.firstChild && hw.ribbon.children.length > 1) {
-      const first = hw.ribbon.firstChild;
-      const r = first.getBoundingClientRect();
-      if (r.right < -margin) {
-        // Removing the first child shifts every other span's offsetLeft to the
-        // left by exactly the second child's current offsetLeft. Counter the
-        // shift in offsetPx so the visual position is preserved (otherwise the
-        // remaining content jerks left by one word's worth on every prune).
-        const next = hw.ribbon.children[1];
-        const consumed = next ? next.offsetLeft : first.offsetWidth;
-        hw.offsetPx -= consumed;
-        hw.ribbon.removeChild(first);
-        hw.leftIdx++;
-      } else break;
+    const margin = window.innerWidth * RIBBON_LEFT_MARGIN_VW;
+    // Right edge of the first span in screen coordinates:
+    //   firstRight = (startX - offsetPx) + rights[0]
+    while (hw.ribbon.children.length > 1 && hw.rights.length > 1) {
+      const firstRight = (hw.startX - hw.offsetPx) + hw.rights[0];
+      if (firstRight >= -margin) break;
+      // Drop the first child. Removing it shifts every other child's
+      // offsetLeft left by `consumed` (the first child's width including its
+      // gap) — but our `rights` array is RELATIVE to the ribbon's left edge,
+      // not the children's offsetLeft, so we re-base it: subtract rights[0]
+      // from every entry and shift the array down. We also subtract `consumed`
+      // from offsetPx so the visual position holds (startX - offsetPx + new
+      // rights[k] === old startX - old offsetPx + old rights[k]).
+      const consumed = hw.rights[0];
+      hw.ribbon.removeChild(hw.ribbon.firstChild);
+      hw.rights.shift();
+      for (let k = 0; k < hw.rights.length; k++) hw.rights[k] -= consumed;
+      hw.offsetPx -= consumed;
+      hw.leftIdx++;
     }
   }
   function hwSyncIdx() {
-    if (!hw) return;
+    if (!hw || !hw.rights.length) return;
+    // Find the span whose left/right edges straddle the screen center.
+    // Center is at (cx) in screen space; in ribbon space it's:
+    //   targetX = cx - (startX - offsetPx) = cx - startX + offsetPx
+    // Then binary-search hw.rights for the first entry > targetX.
     const cx = window.innerWidth / 2;
-    for (const child of hw.ribbon.children) {
-      const r = child.getBoundingClientRect();
-      if (r.left <= cx && r.right >= cx) {
-        const wIdx = parseInt(child.dataset.i, 10);
-        if (Number.isFinite(wIdx) && wIdx !== idx) {
-          idx = wIdx;
-          bar.style.width = (idx / Math.max(1, words.length - 1) * 100).toFixed(2) + "%";
-          statusEl.textContent =
-            (idx + 1).toLocaleString() + " / " + words.length.toLocaleString() +
-            "  ·  " + (pageOf(idx) + 1) + " of " + pageCount();
-          saveProgress();
-        }
-        return;
-      }
+    const targetX = cx - hw.startX + hw.offsetPx;
+    const arr = hw.rights;
+    let lo = 0, hi = arr.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (arr[mid] <= targetX) lo = mid + 1; else hi = mid;
+    }
+    const wIdx = hw.leftIdx + lo;
+    if (Number.isFinite(wIdx) && wIdx !== idx) {
+      idx = wIdx;
+      bar.style.width = (idx / Math.max(1, words.length - 1) * 100).toFixed(2) + "%";
+      statusEl.textContent =
+        (idx + 1).toLocaleString() + " / " + words.length.toLocaleString() +
+        "  ·  " + (pageOf(idx) + 1) + " of " + pageCount();
+      saveProgress();
     }
   }
   function hwCenterIdx(targetIdx, preserveOffset) {
     if (!hw) return;
     if (targetIdx < hw.leftIdx || targetIdx > hw.rightIdx) {
+      // Out of buffer: hard reset. startX gets recomputed below.
       hw.ribbon.innerHTML = "";
+      hw.rights = [];
       hw.leftIdx = targetIdx;
       hw.rightIdx = targetIdx - 1;
       if (!preserveOffset) hw.offsetPx = 0;
+      hw.startX = 0;
       hwFill();
+    } else if (!preserveOffset) {
+      hw.offsetPx = 0;
     }
-    let span = null;
-    for (const c of hw.ribbon.children) {
-      if (parseInt(c.dataset.i, 10) === targetIdx) { span = c; break; }
-    }
-    if (!span) return;
+    // Compute the center of children[targetIdx - leftIdx] from cached widths.
+    const k = targetIdx - hw.leftIdx;
+    if (k < 0 || k >= hw.rights.length) return;
+    const left = k === 0 ? 0 : hw.rights[k - 1];
+    const right = hw.rights[k] - hw.gapPx; // exclude trailing gap from "this word"
+    const center = (left + right) / 2;
     const targetCenter = window.innerWidth / 2;
-    hw.startX = targetCenter - span.offsetLeft - span.offsetWidth / 2 + hw.offsetPx;
+    hw.startX = targetCenter - center + hw.offsetPx;
     hwApply();
+  }
+  // External scrub: shift the ribbon by N pixels (positive = forward).
+  // Refills/prunes and resyncs idx.
+  function hwScrubBy(deltaPx) {
+    if (!hw) return;
+    hw.offsetPx += deltaPx;
+    if (hw.offsetPx < -window.innerWidth * 2) hw.offsetPx = -window.innerWidth * 2;
+    hwFill();
+    hwPrune();
+    hwApply();
+    hwSyncIdx();
   }
   function hwFrame(t) {
     if (!hw) return;
@@ -1464,13 +1713,24 @@
     if (playing && words.length) {
       hw.offsetPx += dt * ribbonPxPerSec();
       hwFill();
-      hwPrune();   // may decrement offsetPx to compensate for removed spans
-      hwApply();   // apply transform LAST so it reflects post-prune offsetPx
+      hwPrune();
+      hwApply();
       hwSyncIdx();
       if (idx >= words.length - 1) pause();
+    } else if (ribbonInertia) {
+      // Inertial drag-scrub continues here.
+      const v = ribbonInertia.vx * Math.pow(0.94, dt * 60);
+      hw.offsetPx += v * dt;
+      ribbonInertia.vx = v;
+      hwFill();
+      hwPrune();
+      hwApply();
+      hwSyncIdx();
+      if (Math.abs(v) < 12) ribbonInertia = null;
     }
     if (hw) hw.raf = requestAnimationFrame(hwFrame);
   }
+  let ribbonInertia = null;
 
   function showWord() {
     const w = words[idx];
@@ -1547,87 +1807,504 @@
     return null;
   }
 
-  // ---- Overview ----
+  // ---- Overview: a pinch-zoomable filmstrip of pages ----
+  //
+  // The strip is one absolutely-positioned row of "tile" elements, one per
+  // book page. Each tile's width = ovTileW (a function of zoom). The strip
+  // is scrolled horizontally via translate3d on a scrubX value (px). Pinch
+  // changes ovTileW continuously; tap-to-enter on a tile commits the page
+  // and closes the overview. Tiles outside the viewport keep their dimensions
+  // but have their inner page content removed (virtualization), so 30,000-
+  // page books still scroll smoothly.
+  const ovStrip = document.getElementById("ovStrip");
+  const ovReticle = document.getElementById("ovReticle");
+  const ovZoomCaption = document.getElementById("ovZoomCaption");
+
+  // Zoom: ovTileW (CSS px) is the rendered width of one tile. Min and max
+  // cap it; min creates a heatmap of bands, max fills the screen with one
+  // page. "Default" puts ~5 tiles in view on a typical desktop.
+  const OV_MIN_TILE = 3;       // heatmap-thin
+  const OV_MAX_TILE = 720;     // a single near-screen page
+  let ovTileW = 240;
+  let ovGap = 14;              // px between tiles
+  let ovScrubX = 0;            // px the strip has shifted left (positive = scrolled right)
+  let ovInertia = null;        // { vx } px/s
+  let ovRaf = null;
+  // How many tiles around the visible window we keep "populated" with text.
+  function ovPopulateWindow() {
+    // At very small tile sizes, populating the page text is wasted cycles.
+    if (ovTileW < 80) return 0;
+    return Math.max(2, Math.ceil(window.innerWidth / ovTileW) + 4);
+  }
+
+  function ovTileFullW() { return ovTileW + ovGap; }
+
   function openOverview() {
     if (!words.length) return;
     pause();
-    currentOverviewPage = pageOf(idx);
-    renderOverview();
-    overview.classList.add("open");
+    overview.classList.add("visible");
     overview.setAttribute("aria-hidden", "false");
+    // Frame later for transition to fire.
+    requestAnimationFrame(() => overview.classList.add("open"));
+    // Default zoom: aim for "a row of pages" — ~6 visible across.
+    const target = Math.max(120, Math.min(380, window.innerWidth / 6));
+    ovTileW = target;
+    ovBuildStrip();
+    ovResetMarks();
+    ovApplyZoom();
+    ovCenterOnPage(pageOf(idx), /*animate*/ false);
+    if (!ovRaf) ovRaf = requestAnimationFrame(ovFrame);
+    currentOverviewPage = pageOf(idx);
+    ovPage.value = currentOverviewPage + 1;
+    ovPageNum.value = currentOverviewPage + 1;
   }
   function closeOverview() {
     overview.classList.remove("open");
     overview.setAttribute("aria-hidden", "true");
+    setTimeout(() => {
+      overview.classList.remove("visible");
+      if (ovRaf) { cancelAnimationFrame(ovRaf); ovRaf = null; }
+      ovInertia = null;
+      document.body.classList.remove("ov-thumb", "ov-heat", "scrubbing");
+    }, 460);
   }
-  function renderOverview() {
-    if (currentOverviewPage < 0) currentOverviewPage = 0;
-    if (currentOverviewPage >= pageCount()) currentOverviewPage = pageCount() - 1;
-    ovTitle.textContent = bookName || "—";
-    ovPage.max = pageCount();
-    ovPage.value = currentOverviewPage + 1;
-    ovPageNum.max = pageCount();
-    if (document.activeElement !== ovPageNum) ovPageNum.value = currentOverviewPage + 1;
-    ovTotal.textContent = pageCount();
 
-    const start = currentOverviewPage * PAGE_SIZE;
+  function ovBuildStrip() {
+    const N = pageCount();
+    // (Re)create tiles only when the count changes.
+    if (ovStrip.childElementCount !== N) {
+      const frag = document.createDocumentFragment();
+      for (let p = 0; p < N; p++) {
+        const tile = document.createElement("div");
+        tile.className = "tile";
+        tile.dataset.p = p;
+        const folio = document.createElement("div");
+        folio.className = "folio";
+        folio.textContent = (p + 1).toString();
+        tile.appendChild(folio);
+        frag.appendChild(tile);
+      }
+      ovStrip.innerHTML = "";
+      ovStrip.appendChild(frag);
+      ovLastCurrent = -1;
+      ovLastReadHi = -1;
+      ovPopulatedRange = { lo: -1, hi: -2 };
+      ovResetMarks();
+    }
+    ovTotal.textContent = N;
+    ovPage.max = N;
+    ovPageNum.max = N;
+    ovTitle.textContent = bookName || "—";
+  }
+  function ovApplyZoom() {
+    // Layout via CSS variables — pinch updates 3 properties, not 30k.
+    const N = ovStrip.childElementCount;
+    ovGap = ovTileW < 40 ? 1 : ovTileW < 100 ? 4 : 14;
+    const tileFull = ovTileFullW();
+    const aspect = 1.4;
+    const maxTileH = Math.max(120, window.innerHeight - 200);
+    const tileH = ovTileW < 24
+      ? maxTileH
+      : ovTileW < 80
+        ? Math.min(maxTileH, ovTileW * 5)
+        : Math.min(maxTileH, ovTileW * aspect);
+    ovStrip.style.width = (N * tileFull - ovGap) + "px";
+    const root = document.documentElement.style;
+    root.setProperty("--ov-tile-w", ovTileW + "px");
+    root.setProperty("--ov-tile-h", tileH + "px");
+    root.setProperty("--ov-gap", ovGap + "px");
+    const heatMode = ovTileW < 24;
+    const thumbMode = ovTileW < 80;
+    document.body.classList.toggle("ov-heat", heatMode);
+    document.body.classList.toggle("ov-thumb", thumbMode);
+    ovRepopulateVisible();
+    ovApplyTransform();
+    ovZoomCaption.textContent = heatMode
+      ? "  · heatmap"
+      : thumbMode
+        ? "  · " + Math.round(window.innerWidth / tileFull) + " pages across"
+        : "  · " + (ovTileW / 100).toFixed(1) + "× tile";
+  }
+
+  let ovLastCurrent = -1;     // last "current" tile index (idx-derived)
+  let ovLastReadHi = -1;      // last "read up to (exclusive)" tile index (currentOverviewPage)
+  function ovUpdateMarks() {
+    // Incremental: only diff the small number of tiles whose state changed.
+    // That's the just-vacated current, the new current, and the slice between
+    // the old and new "read up to" boundary.
+    const N = ovStrip.childElementCount;
+    const curPage = pageOf(idx);                // book progress
+    const readHi = currentOverviewPage;         // what the user is *looking at*
+    if (curPage !== ovLastCurrent) {
+      if (ovLastCurrent >= 0 && ovLastCurrent < N) {
+        ovStrip.children[ovLastCurrent].classList.remove("current");
+      }
+      if (curPage >= 0 && curPage < N) {
+        ovStrip.children[curPage].classList.add("current");
+      }
+      ovLastCurrent = curPage;
+    }
+    if (readHi !== ovLastReadHi) {
+      if (readHi > ovLastReadHi) {
+        for (let p = Math.max(0, ovLastReadHi); p < readHi && p < N; p++) {
+          if (p < curPage) ovStrip.children[p].classList.add("read");
+        }
+      } else {
+        for (let p = readHi; p < ovLastReadHi && p < N; p++) {
+          ovStrip.children[p].classList.remove("read");
+        }
+      }
+      ovLastReadHi = readHi;
+    }
+  }
+  function ovResetMarks() {
+    // Full pass: used on book load or after rebuild.
+    const N = ovStrip.childElementCount;
+    const curPage = pageOf(idx);
+    for (let p = 0; p < N; p++) {
+      const tile = ovStrip.children[p];
+      const wantCur = p === curPage;
+      const wantRead = p < curPage;
+      if (wantCur !== tile.classList.contains("current")) tile.classList.toggle("current", wantCur);
+      if (wantRead !== tile.classList.contains("read")) tile.classList.toggle("read", wantRead);
+    }
+    ovLastCurrent = curPage;
+    ovLastReadHi = curPage;
+  }
+
+  function ovApplyTransform() {
+    // Center the strip's reticle (which is fixed at viewport-center) on the
+    // playhead position. The strip transforms left by ovScrubX, so the
+    // viewport center maps to ovScrubX in strip coords.
+    ovStrip.style.transform = "translate3d(" + (-ovScrubX).toFixed(2) + "px, 0, 0)";
+  }
+
+  function ovCenterOnPage(p, animate) {
+    const tileFull = ovTileFullW();
+    const target = p * tileFull + ovTileW / 2 - window.innerWidth / 2 + ovBodyLeft();
+    if (animate) {
+      ovAnimateScrubTo(target, 460);
+    } else {
+      ovScrubX = target;
+      ovApplyTransform();
+      ovRepopulateVisible();
+      ovSyncPagecontrols();
+    }
+  }
+  function ovBodyLeft() {
+    // ovBody has no left padding by default but might in some breakpoints.
+    return 0;
+  }
+
+  function ovScrubByPx(dx) {
+    ovScrubX += dx;
+    const max = (ovStrip.childElementCount - 1) * ovTileFullW() + ovTileW / 2 - window.innerWidth / 2;
+    const min = ovTileW / 2 - window.innerWidth / 2;
+    if (ovScrubX < min - window.innerWidth * 0.2) ovScrubX = min - window.innerWidth * 0.2;
+    if (ovScrubX > max + window.innerWidth * 0.2) ovScrubX = max + window.innerWidth * 0.2;
+    ovApplyTransform();
+    ovRepopulateVisible();
+    ovSyncPagecontrols();
+  }
+  function ovCenterPageFromScrub() {
+    const tileFull = ovTileFullW();
+    const center = ovScrubX + window.innerWidth / 2;
+    const p = Math.round((center - ovTileW / 2) / tileFull);
+    return Math.max(0, Math.min(ovStrip.childElementCount - 1, p));
+  }
+  function ovSyncPagecontrols() {
+    const p = ovCenterPageFromScrub();
+    if (p !== currentOverviewPage) {
+      currentOverviewPage = p;
+      ovPage.value = p + 1;
+      if (document.activeElement !== ovPageNum) ovPageNum.value = p + 1;
+    }
+  }
+
+  // Virtualize tile contents: only populate text for the tiles within the
+  // visible window. Outside the window, strip the .pg child if it exists.
+  let ovPopulatedRange = { lo: -1, hi: -2 };
+  function ovRepopulateVisible() {
+    const win = ovPopulateWindow();
+    if (win === 0) {
+      // Heatmap mode: no text contents anywhere.
+      if (ovPopulatedRange.lo <= ovPopulatedRange.hi) {
+        for (let p = ovPopulatedRange.lo; p <= ovPopulatedRange.hi; p++) {
+          const tile = ovStrip.children[p];
+          if (!tile) continue;
+          const pg = tile.querySelector(".pg");
+          if (pg) pg.remove();
+        }
+        ovPopulatedRange = { lo: -1, hi: -2 };
+      }
+      return;
+    }
+    const center = ovCenterPageFromScrub();
+    const lo = Math.max(0, center - Math.ceil(win / 2));
+    const hi = Math.min(ovStrip.childElementCount - 1, center + Math.ceil(win / 2));
+    // Remove .pg from tiles that have left the window.
+    for (let p = ovPopulatedRange.lo; p <= ovPopulatedRange.hi; p++) {
+      if (p < lo || p > hi) {
+        const tile = ovStrip.children[p];
+        if (!tile) continue;
+        const pg = tile.querySelector(".pg");
+        if (pg) pg.remove();
+      }
+    }
+    // Add .pg to tiles inside the window that lack it.
+    for (let p = lo; p <= hi; p++) {
+      const tile = ovStrip.children[p];
+      if (!tile) continue;
+      if (tile.querySelector(".pg")) continue;
+      tile.appendChild(ovBuildPage(p));
+    }
+    ovPopulatedRange = { lo, hi };
+  }
+  function ovBuildPage(p) {
+    const start = p * PAGE_SIZE;
     const end = Math.min(words.length, start + PAGE_SIZE);
+    const pg = document.createElement("div");
+    pg.className = "pg";
+    pg.dataset.p = p;
     const frag = document.createDocumentFragment();
     for (let i = start; i < end; i++) {
       const span = document.createElement("span");
       span.className = "w" + (i === idx ? " current" : i < idx ? " read" : "");
-
-      // Drop-cap treatment for the very first word of the page,
-      // when its first character is a letter.
-      if (i === start && /\p{L}/u.test(words[i][0])) {
-        const w = words[i];
-        const cap = document.createElement("span");
-        cap.className = "firstchar";
-        cap.textContent = w[0];
-        span.appendChild(cap);
-        span.appendChild(document.createTextNode(w.slice(1)));
-      } else {
-        span.textContent = words[i];
-      }
+      span.textContent = words[i];
       span.dataset.i = i;
       frag.appendChild(span);
       frag.appendChild(document.createTextNode(" "));
     }
-    ovBody.innerHTML = "";
-    ovBody.appendChild(frag);
-    const cur = ovBody.querySelector(".w.current");
-    if (cur) cur.scrollIntoView({ block: "center" });
-    else ovBody.scrollTop = 0;
+    pg.appendChild(frag);
+    return pg;
   }
-  ovBody.addEventListener("click", (e) => {
-    const t = e.target.closest(".w");
-    if (!t) return;
-    const i = parseInt(t.dataset.i, 10);
-    if (Number.isFinite(i)) {
-      idx = i;
-      showWord();
-      closeOverview();
+
+  // (formerly ovRefreshFolio — replaced by ovResetMarks called once on open.)
+
+  // RAF: applies inertia and pulls scrub toward integer page when settled.
+  let ovSnapTarget = null;       // optional spring-to-page target
+  function ovFrame(t) {
+    if (ovInertia) {
+      const dt = ovInertia.lastT ? Math.min(0.05, (t - ovInertia.lastT) / 1000) : 0.016;
+      ovInertia.lastT = t;
+      const v = ovInertia.vx * Math.pow(0.92, dt * 60);
+      ovScrubByPx(-v * dt);
+      ovInertia.vx = v;
+      if (Math.abs(v) < 30) ovInertia = null;
+    } else if (ovSnapTarget != null) {
+      const k = 0.18;
+      const next = ovScrubX + (ovSnapTarget - ovScrubX) * k;
+      if (Math.abs(next - ovSnapTarget) < 0.5) {
+        ovScrubX = ovSnapTarget;
+        ovSnapTarget = null;
+      } else {
+        ovScrubX = next;
+      }
+      ovApplyTransform();
+      ovRepopulateVisible();
+      ovSyncPagecontrols();
+    }
+    ovRaf = requestAnimationFrame(ovFrame);
+  }
+  function ovAnimateScrubTo(target, dur) {
+    // Simple spring. We just set a target and let ovFrame pull us in.
+    ovInertia = null;
+    ovSnapTarget = target;
+  }
+
+  // Pointer Events on the overview body.
+  const ovPointers = new Map();
+  let ovDrag = null;
+  let ovPinch = null;
+  ovBody.addEventListener("pointerdown", (e) => {
+    ovPointers.set(e.pointerId, { x: e.clientX, y: e.clientY, t: nowMs() });
+    try { ovBody.setPointerCapture(e.pointerId); } catch {}
+    ovInertia = null;
+    ovSnapTarget = null;
+    if (ovPointers.size === 2) {
+      const it = ovPointers.values();
+      const a = it.next().value, b = it.next().value;
+      ovPinch = {
+        d0: Math.hypot(a.x - b.x, a.y - b.y),
+        tile0: ovTileW,
+        anchorClientX: (a.x + b.x) / 2,
+        anchorScrub0: ovScrubX + ((a.x + b.x) / 2),
+      };
+      ovDrag = null;
+    } else if (ovPointers.size === 1) {
+      ovDrag = {
+        pointerId: e.pointerId,
+        startX: e.clientX, startY: e.clientY,
+        lastX: e.clientX, lastT: nowMs(),
+        vx: 0,
+        moved: false,
+      };
+      document.body.classList.add("scrubbing");
     }
   });
-  ovPrev.addEventListener("click", () => { currentOverviewPage--; renderOverview(); });
-  ovNext.addEventListener("click", () => { currentOverviewPage++; renderOverview(); });
+  ovBody.addEventListener("pointermove", (e) => {
+    const p = ovPointers.get(e.pointerId);
+    if (!p) return;
+    p.x = e.clientX; p.y = e.clientY;
+    if (ovPinch && ovPointers.size >= 2) {
+      const it = ovPointers.values();
+      const a = it.next().value, b = it.next().value;
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (ovPinch.d0 > 0) {
+        const ratio = d / ovPinch.d0;
+        // Anchor zoom on the midpoint between the fingers — the tile under
+        // the user's pinch should stay under their fingers.
+        const newTile = Math.max(OV_MIN_TILE, Math.min(OV_MAX_TILE, ovPinch.tile0 * ratio));
+        const scaleFactor = newTile / ovPinch.tile0;
+        // Rescale the strip's scroll so the anchor world-X is preserved.
+        const newScrub = ovPinch.anchorScrub0 * scaleFactor - ovPinch.anchorClientX;
+        ovTileW = newTile;
+        ovScrubX = newScrub;
+        ovApplyZoom();
+      }
+      return;
+    }
+    if (!ovDrag || ovDrag.pointerId !== e.pointerId) return;
+    const dx = e.clientX - ovDrag.startX;
+    const dy = e.clientY - ovDrag.startY;
+    if (!ovDrag.moved && Math.hypot(dx, dy) > 6) ovDrag.moved = true;
+    if (ovDrag.moved) {
+      const t = nowMs();
+      const dtMs = Math.max(1, t - ovDrag.lastT);
+      const stepX = e.clientX - ovDrag.lastX;
+      const inst = (stepX / dtMs) * 1000;
+      ovDrag.vx = ovDrag.vx * 0.7 + inst * 0.3;
+      ovDrag.lastX = e.clientX;
+      ovDrag.lastT = t;
+      ovScrubByPx(-stepX);
+    }
+  });
+  function endOvPointer(e) {
+    if (!ovPointers.has(e.pointerId)) return;
+    ovPointers.delete(e.pointerId);
+    try { ovBody.releasePointerCapture(e.pointerId); } catch {}
+    if (ovPinch && ovPointers.size < 2) {
+      ovPinch = null;
+      document.body.classList.remove("scrubbing");
+      return;
+    }
+    if (ovDrag && ovDrag.pointerId === e.pointerId) {
+      const drag = ovDrag; ovDrag = null;
+      document.body.classList.remove("scrubbing");
+      if (!drag.moved) {
+        // Tap. If on a word, jump there. If on a tile, enter that page.
+        const wEl = e.target.closest(".pg .w");
+        if (wEl) {
+          const i = parseInt(wEl.dataset.i, 10);
+          if (Number.isFinite(i)) {
+            idx = i;
+            showWord();
+            closeOverview();
+          }
+          return;
+        }
+        const tile = e.target.closest(".tile");
+        if (tile) {
+          const p = parseInt(tile.dataset.p, 10);
+          if (Number.isFinite(p)) {
+            // Smoothly center on it. If already centered, commit-jump.
+            if (p === currentOverviewPage) {
+              idx = p * PAGE_SIZE;
+              showWord();
+              closeOverview();
+            } else {
+              currentOverviewPage = p;
+              ovAnimateScrubTo(
+                p * ovTileFullW() + ovTileW / 2 - window.innerWidth / 2,
+                460
+              );
+            }
+          }
+          return;
+        }
+      } else {
+        // Hand off velocity.
+        ovInertia = { vx: -drag.vx, lastT: 0 };
+      }
+    }
+  }
+  ovBody.addEventListener("pointerup", endOvPointer);
+  ovBody.addEventListener("pointercancel", endOvPointer);
+
+  // Wheel inside overview: vertical wheel scrubs horizontally; ctrl/cmd
+  // wheel zooms. Works for trackpad pinch (ctrlKey) and mouse wheel alike.
+  ovBody.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    if (e.ctrlKey || e.metaKey) {
+      // Anchor zoom under the cursor.
+      const factor = Math.exp(-e.deltaY * 0.012);
+      const newTile = Math.max(OV_MIN_TILE, Math.min(OV_MAX_TILE, ovTileW * factor));
+      const scaleFactor = newTile / ovTileW;
+      const anchorClient = e.clientX;
+      const anchorWorld = ovScrubX + anchorClient;
+      ovTileW = newTile;
+      ovScrubX = anchorWorld * scaleFactor - anchorClient;
+      ovApplyZoom();
+      return;
+    }
+    let dy = e.deltaY, dx = e.deltaX;
+    if (e.deltaMode === 1) { dy *= 16; dx *= 16; }
+    else if (e.deltaMode === 2) { dy *= window.innerHeight; dx *= window.innerWidth; }
+    const d = Math.abs(dx) > Math.abs(dy) ? dx : dy;
+    ovScrubByPx(d);
+  }, { passive: false });
+
+  // Header controls.
+  ovPrev.addEventListener("click", () => {
+    currentOverviewPage = Math.max(0, currentOverviewPage - 1);
+    ovAnimateScrubTo(
+      currentOverviewPage * ovTileFullW() + ovTileW / 2 - window.innerWidth / 2,
+      400
+    );
+  });
+  ovNext.addEventListener("click", () => {
+    currentOverviewPage = Math.min(pageCount() - 1, currentOverviewPage + 1);
+    ovAnimateScrubTo(
+      currentOverviewPage * ovTileFullW() + ovTileW / 2 - window.innerWidth / 2,
+      400
+    );
+  });
   ovClose.addEventListener("click", closeOverview);
-  ovJump.addEventListener("click", () => { idx = currentOverviewPage * PAGE_SIZE; showWord(); closeOverview(); });
+  ovJump.addEventListener("click", () => {
+    idx = currentOverviewPage * PAGE_SIZE;
+    showWord();
+    closeOverview();
+  });
   ovPage.addEventListener("input", () => {
     const n = parseInt(ovPage.value, 10);
-    if (Number.isFinite(n)) { currentOverviewPage = n - 1; renderOverview(); }
+    if (Number.isFinite(n)) {
+      currentOverviewPage = Math.max(0, Math.min(pageCount() - 1, n - 1));
+      ovScrubX = currentOverviewPage * ovTileFullW() + ovTileW / 2 - window.innerWidth / 2;
+      ovApplyTransform();
+      ovRepopulateVisible();
+    }
   });
   function commitTypedPage() {
     const n = parseInt(ovPageNum.value, 10);
     if (!Number.isFinite(n)) { ovPageNum.value = currentOverviewPage + 1; return; }
     currentOverviewPage = Math.max(0, Math.min(pageCount() - 1, n - 1));
-    renderOverview();
+    ovAnimateScrubTo(
+      currentOverviewPage * ovTileFullW() + ovTileW / 2 - window.innerWidth / 2,
+      400
+    );
   }
   ovPageNum.addEventListener("change", commitTypedPage);
   ovPageNum.addEventListener("keydown", (e) => {
     if (e.key === "Enter") { e.preventDefault(); commitTypedPage(); ovPageNum.blur(); }
   });
   ovPageNum.addEventListener("focus", () => ovPageNum.select());
+
+  // Re-layout on resize while overview is open.
+  window.addEventListener("resize", () => {
+    if (!overview.classList.contains("visible")) return;
+    ovApplyZoom();
+    ovCenterOnPage(currentOverviewPage, false);
+  });
 
   // ---- Controls ----
   playBtn.addEventListener("click", toggle);
@@ -1636,13 +2313,15 @@
   // ---- Settings panel ----
   function openSettings() {
     pause();
-    settings.classList.add("open");
+    settings.classList.add("visible");
     settings.setAttribute("aria-hidden", "false");
+    requestAnimationFrame(() => settings.classList.add("open"));
     applyTransitionMode();
   }
   function closeSettings() {
     settings.classList.remove("open");
     settings.setAttribute("aria-hidden", "true");
+    setTimeout(() => settings.classList.remove("visible"), 460);
   }
   settingsLink.addEventListener("click", openSettings);
   settingsClose.addEventListener("click", closeSettings);
@@ -1659,28 +2338,57 @@
   });
   applyTransitionMode();
 
-  // ---- Word scale slider ----
+  // ---- Word scale (continuous float) ----
+  // Single source of truth: scalePct (a float, 50..220). The slider mirrors
+  // it; pinch and Cmd/Ctrl-wheel write to it; persistence rounds to integer
+  // because that's all the previous value range allowed in storage. Live
+  // interaction never rounds.
   const SCALE_KEY = "speading:scale";
+  const SCALE_MIN = 50, SCALE_MAX = 220;
   const scaleSlider = document.getElementById("scaleSlider");
   const scaleLabel = document.getElementById("scaleLabel");
-  function applyScale(v) {
-    const s = (v / 100).toFixed(2);
-    document.documentElement.style.setProperty("--word-scale", s);
-    scaleLabel.textContent = s + "×";
-    if (isRibbon() && hw) hwCenterIdx(idx, /*preserveOffset*/ true);
+  let scalePct = 100;
+  let scaleResyncQueued = false;
+  function queueRibbonResync() {
+    // RAF-throttle the (expensive) ribbon width resample during continuous
+    // pinch/wheel interaction so we don't pay N offsetWidth reads per move.
+    if (scaleResyncQueued) return;
+    scaleResyncQueued = true;
+    requestAnimationFrame(() => {
+      scaleResyncQueued = false;
+      if (isRibbon() && hw) {
+        hwResetWidths();
+        hwCenterIdx(idx, /*preserveOffset*/ true);
+      }
+    });
   }
-  const savedScale = parseInt(localStorage.getItem(SCALE_KEY), 10);
-  if (Number.isFinite(savedScale) && savedScale >= 50 && savedScale <= 220) {
+  function applyScale(v, opts) {
+    // v is a float percent; clamp.
+    if (!Number.isFinite(v)) v = 100;
+    v = Math.max(SCALE_MIN, Math.min(SCALE_MAX, v));
+    scalePct = v;
+    const s = v / 100;
+    // Two-decimal css var keeps subpixel reflows tame.
+    document.documentElement.style.setProperty("--word-scale", s.toFixed(3));
+    scaleLabel.textContent = s.toFixed(2) + "×";
+    if (!opts || !opts.fromSlider) {
+      // Mirror back to the slider unless the slider initiated the change.
+      if (parseFloat(scaleSlider.value) !== v) scaleSlider.value = v;
+    }
+    queueRibbonResync();
+  }
+  function persistScale() {
+    try { localStorage.setItem(SCALE_KEY, Math.round(scalePct)); } catch {}
+  }
+  const savedScale = parseFloat(localStorage.getItem(SCALE_KEY));
+  if (Number.isFinite(savedScale) && savedScale >= SCALE_MIN && savedScale <= SCALE_MAX) {
     scaleSlider.value = savedScale;
   }
-  applyScale(parseInt(scaleSlider.value, 10));
-  function onScaleChange() {
-    const v = parseInt(scaleSlider.value, 10);
-    applyScale(v);
-    try { localStorage.setItem(SCALE_KEY, v); } catch {}
-  }
-  scaleSlider.addEventListener("input", onScaleChange);
-  scaleSlider.addEventListener("change", onScaleChange);
+  applyScale(parseFloat(scaleSlider.value));
+  scaleSlider.addEventListener("input", () => {
+    applyScale(parseFloat(scaleSlider.value), { fromSlider: true });
+  });
+  scaleSlider.addEventListener("change", persistScale);
 
   // ---- Mobile landscape: try to enter fullscreen so the URL bar is gone ----
   const isTouch = matchMedia("(hover: none) and (pointer: coarse)").matches
@@ -1699,14 +2407,21 @@
     }
     try { req.call(el).catch(() => {}); } catch {}
   }
-  // Ribbon needs to recompute on rotate / resize
+  // Ribbon needs to recompute on rotate / resize. Word widths depend on
+  // 9vw clamp so the cached `rights[]` array goes stale on viewport change.
   window.addEventListener("resize", () => {
-    if (isRibbon() && hw) hwCenterIdx(idx, /*preserveOffset*/ true);
+    if (isRibbon() && hw) {
+      hwResetWidths();
+      hwCenterIdx(idx, /*preserveOffset*/ true);
+    }
   });
   window.addEventListener("orientationchange", () => {
     setTimeout(() => {
       if (isTouch && window.innerWidth > window.innerHeight) maybeFullscreen();
-      if (isRibbon() && hw) hwCenterIdx(idx, /*preserveOffset*/ true);
+      if (isRibbon() && hw) {
+        hwResetWidths();
+        hwCenterIdx(idx, /*preserveOffset*/ true);
+      }
     }, 200);
   });
   back10Btn.addEventListener("click", () => {
@@ -1729,68 +2444,143 @@
     idx = Math.min(words.length - 1, idx + 10);
     showWord();
   });
-  stage.addEventListener("click", () => { if (words.length) toggle(); });
+  // ---- Unified Pointer Events layer on the stage ----
+  //
+  // One pipeline for mouse, touch, and pen. A Map keyed by pointerId tracks
+  // every active pointer; pinch is "any time the map has >=2 entries on this
+  // surface". Single-pointer drag scrubs the ribbon (when paused) or, on
+  // non-ribbon modes, falls through to swipe heuristics. Tap (no movement)
+  // toggles play/pause.
+  //
+  // Wheel: vertical wheel scrubs the ribbon by a few words; horizontal wheel
+  // (or shift+wheel) does the same. Cmd/Ctrl + wheel = zoom, anchored on
+  // cursor X. wheelEvent.ctrlKey is set by macOS for trackpad pinch, so the
+  // same path serves both.
+  const TAP_SLOP = 10;     // px movement under which a release counts as a tap
+  const SWIPE = 40;        // px past which a touch flick interprets as ±10 words / pages
+  const stagePointers = new Map();
+  let stageDrag = null;          // { pointerId, lastX, lastY, vx, ax, lastT, mode }
+  let stagePinch = null;         // { d0, scale0, cx, cy }
+  let stageInertiaRaf = null;
 
-  // ---- Mobile swipe gestures on stage ----
-  // tap          : play/pause (handled by click above)
-  // swipe ←/→   : ∓10 words
-  // swipe ↑/↓   : ∓10 pages
-  const isTouchDev = matchMedia("(hover: none) and (pointer: coarse)").matches
-    || ("ontouchstart" in window);
-  if (isTouchDev) {
-    let tStart = null, tMoved = false;
-    let pinch = null; // { dist, scale }
-    const SWIPE = 40;
-    const dist2 = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-    stage.addEventListener("touchstart", (e) => {
-      if (e.touches.length === 2) {
-        // Begin pinch — cancel any in-flight swipe so it doesn't trip on
-        // touchend when the user lifts both fingers.
-        tStart = null;
-        pinch = {
-          dist: dist2(e.touches[0], e.touches[1]),
-          scale: parseInt(scaleSlider.value, 10) || 100,
-        };
+  function nowMs() { return performance.now(); }
+
+  function stagePinchDist() {
+    const it = stagePointers.values();
+    const a = it.next().value, b = it.next().value;
+    if (!a || !b) return 0;
+    return Math.hypot(a.x - b.x, a.y - b.y);
+  }
+  function stagePinchCenter() {
+    const it = stagePointers.values();
+    const a = it.next().value, b = it.next().value;
+    return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  }
+
+  stage.addEventListener("pointerdown", (e) => {
+    // Don't capture pointers on UI elements layered over the stage.
+    if (e.target.closest("#controls, #folio, #toast")) return;
+    stagePointers.set(e.pointerId, { x: e.clientX, y: e.clientY, t: nowMs(), startX: e.clientX, startY: e.clientY, type: e.pointerType });
+    try { stage.setPointerCapture(e.pointerId); } catch {}
+    if (stagePointers.size === 2) {
+      // Begin pinch.
+      stagePinch = {
+        d0: stagePinchDist(),
+        scale0: scalePct,
+        center: stagePinchCenter(),
+      };
+      stageDrag = null;
+    } else if (stagePointers.size === 1) {
+      // Begin potential drag/scrub.
+      const t = nowMs();
+      stageDrag = {
+        pointerId: e.pointerId,
+        lastX: e.clientX, lastY: e.clientY,
+        startX: e.clientX, startY: e.clientY,
+        startT: t,
+        lastT: t,
+        vx: 0,
+        moved: false,
+        scrubbed: false,
+      };
+      // Cancel any inertia in-flight on stage drag.
+      if (stageInertiaRaf) { cancelAnimationFrame(stageInertiaRaf); stageInertiaRaf = null; }
+      ribbonInertia = null;
+    }
+  });
+
+  stage.addEventListener("pointermove", (e) => {
+    const p = stagePointers.get(e.pointerId);
+    if (!p) return;
+    p.x = e.clientX; p.y = e.clientY;
+    if (stagePinch && stagePointers.size >= 2) {
+      const d = stagePinchDist();
+      if (stagePinch.d0 > 0) {
+        const ratio = d / stagePinch.d0;
+        applyScale(stagePinch.scale0 * ratio);
+      }
+      return;
+    }
+    if (!stageDrag || stageDrag.pointerId !== e.pointerId) return;
+    const dx = e.clientX - stageDrag.startX;
+    const dy = e.clientY - stageDrag.startY;
+    if (!stageDrag.moved && Math.hypot(dx, dy) > TAP_SLOP) {
+      stageDrag.moved = true;
+    }
+    if (stageDrag.moved) {
+      const t = nowMs();
+      const dt = Math.max(1, t - stageDrag.lastT);
+      const stepX = e.clientX - stageDrag.lastX;
+      // Velocity in px/s, exponential smoothing.
+      const inst = (stepX / dt) * 1000;
+      stageDrag.vx = stageDrag.vx * 0.7 + inst * 0.3;
+      stageDrag.lastX = e.clientX;
+      stageDrag.lastY = e.clientY;
+      stageDrag.lastT = t;
+      // Drag-scrub only fires on the ribbon (where it's continuous and
+      // visually meaningful). Other modes use swipe-on-release semantics.
+      if (isRibbon() && hw && !playing) {
+        document.body.classList.add("scrubbing");
+        // Drag direction is intuitive: drag content left = move forward.
+        // A leftward delta increases offsetPx.
+        hwScrubBy(-stepX);
+        stageDrag.scrubbed = true;
+      }
+    }
+  });
+
+  function endStagePointer(e) {
+    const p = stagePointers.get(e.pointerId);
+    if (!p) return;
+    stagePointers.delete(e.pointerId);
+    try { stage.releasePointerCapture(e.pointerId); } catch {}
+    if (stagePinch && stagePointers.size < 2) {
+      stagePinch = null;
+      persistScale();
+      // Suppress click/swipe interpretation on the lingering finger.
+      stageDrag = null;
+      document.body.classList.remove("scrubbing");
+      return;
+    }
+    if (stageDrag && stageDrag.pointerId === e.pointerId) {
+      const drag = stageDrag; stageDrag = null;
+      document.body.classList.remove("scrubbing");
+      if (!words.length) return;
+      if (!drag.moved) {
+        // Tap: play/pause.
+        toggle();
         return;
       }
-      if (e.touches.length !== 1) { tStart = null; return; }
-      tStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-      tMoved = false;
-    }, { passive: true });
-    stage.addEventListener("touchmove", (e) => {
-      if (pinch && e.touches.length === 2) {
-        const d = dist2(e.touches[0], e.touches[1]);
-        const ratio = d / pinch.dist;
-        const next = Math.max(50, Math.min(220, Math.round(pinch.scale * ratio)));
-        if (next !== parseInt(scaleSlider.value, 10)) {
-          scaleSlider.value = next;
-          applyScale(next);
-        }
+      if (drag.scrubbed && isRibbon() && hw) {
+        // Inertial finish: hand off velocity to the ribbon's RAF loop.
+        ribbonInertia = { vx: -drag.vx };
         return;
       }
-      if (!tStart || e.touches.length !== 1) return;
-      const t = e.touches[0];
-      if (Math.abs(t.clientX - tStart.x) > 8 || Math.abs(t.clientY - tStart.y) > 8) tMoved = true;
-    }, { passive: true });
-    stage.addEventListener("touchend", (e) => {
-      if (pinch) {
-        // End of pinch (one or both fingers lifted): commit and persist.
-        if (e.touches.length < 2) {
-          try { localStorage.setItem(SCALE_KEY, scaleSlider.value); } catch {}
-          pinch = null;
-          tStart = null; // suppress any swipe interpretation on the lingering finger
-          e.preventDefault();
-        }
-        return;
-      }
-      if (!tStart || !words.length) { tStart = null; return; }
-      const t = e.changedTouches && e.changedTouches[0];
-      const start = tStart; tStart = null;
-      if (!t) return;
-      const dx = t.clientX - start.x, dy = t.clientY - start.y;
+      // Non-ribbon: classic swipe semantics.
+      const dx = e.clientX - drag.startX;
+      const dy = e.clientY - drag.startY;
       const adx = Math.abs(dx), ady = Math.abs(dy);
-      if (adx < SWIPE && ady < SWIPE) return; // let the click fire
-      e.preventDefault();
+      if (adx < SWIPE && ady < SWIPE) return;
       if (adx > ady) {
         idx = dx < 0 ? Math.min(words.length - 1, idx + 10) : Math.max(0, idx - 10);
       } else {
@@ -1799,26 +2589,54 @@
           : Math.max(0, idx - PAGE_SIZE * 10);
       }
       showWord();
-    });
-
-    // ---- Swipe ←/→ in browse view = prev/next page ----
-    let bStart = null;
-    ovBody.addEventListener("touchstart", (e) => {
-      if (e.touches.length !== 1) { bStart = null; return; }
-      bStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-    }, { passive: true });
-    ovBody.addEventListener("touchend", (e) => {
-      if (!bStart) return;
-      const t = e.changedTouches && e.changedTouches[0];
-      const start = bStart; bStart = null;
-      if (!t) return;
-      const dx = t.clientX - start.x, dy = t.clientY - start.y;
-      if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-        currentOverviewPage += dx < 0 ? 1 : -1;
-        renderOverview();
-      }
-    });
+    }
   }
+  stage.addEventListener("pointerup", endStagePointer);
+  stage.addEventListener("pointercancel", endStagePointer);
+
+  // Wheel on stage: scrub the ribbon, or zoom with Cmd/Ctrl (incl. trackpad
+  // pinch which sets ctrlKey on macOS).
+  stage.addEventListener("wheel", (e) => {
+    // Don't fight the controls.
+    if (e.target.closest("#controls, #folio, #toast")) return;
+    if (e.ctrlKey || e.metaKey) {
+      // Zoom. deltaY positive = pinch out (smaller); negative = pinch in (larger).
+      // exp() makes zoom feel multiplicative — equal distances feel like equal ratio.
+      e.preventDefault();
+      const factor = Math.exp(-e.deltaY * 0.01);
+      applyScale(scalePct * factor);
+      // Persist when the user pauses scrolling (debounced).
+      if (zoomPersistTimer) clearTimeout(zoomPersistTimer);
+      zoomPersistTimer = setTimeout(() => { persistScale(); zoomPersistTimer = null; }, 220);
+      return;
+    }
+    if (!words.length) return;
+    e.preventDefault();
+    // Most wheels report deltaMode 0 (pixel) on trackpads. We translate
+    // pixels→words proportional to viewport, with line/page deltas scaled too.
+    let dy = e.deltaY;
+    let dx = e.deltaX;
+    if (e.deltaMode === 1) { dy *= 16; dx *= 16; }       // line
+    else if (e.deltaMode === 2) { dy *= window.innerHeight; dx *= window.innerWidth; }
+    // Use whichever axis dominates so trackpad horizontal flicks work too.
+    const d = Math.abs(dx) > Math.abs(dy) ? dx : dy;
+    if (isRibbon() && hw) {
+      // 1 wheel notch (~100px) ≈ 0.5 viewports of ribbon — gentle.
+      hwScrubBy(d * 0.5);
+    } else {
+      // Non-ribbon: integer-step the word index. Calibrated so a single
+      // notch nudges by ~3 words and a hard scroll moves dozens.
+      wheelAccum += d / 30;
+      const step = Math.trunc(wheelAccum);
+      if (step !== 0) {
+        wheelAccum -= step;
+        idx = Math.max(0, Math.min(words.length - 1, idx + step));
+        showWord();
+      }
+    }
+  }, { passive: false });
+  let wheelAccum = 0;
+  let zoomPersistTimer = null;
 
   // ---- Tokenize / load ----
   function tokenize(text) {
