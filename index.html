@@ -58,14 +58,25 @@
     text-rendering: optimizeLegibility;
     overscroll-behavior: none;   /* no pull-to-refresh, no rubber-banding */
   }
-  /* iOS Safari URL-bar collapse trick: on touch devices, let the document be
-     ~80px taller than the visible viewport. Once we scrollTo(0, 80) on a user
-     gesture, iOS minimizes the URL bar and keeps it minimized because the page
-     is sitting at scroll offset > 0. The position:fixed UI doesn't move. */
+  #iosScrollPad { display: none; }
+  /* iOS Safari URL-bar collapse trick: keep an in-flow spacer of 100vh below
+     the (position:fixed) UI so the document is genuinely scrollable. Programmatic
+     scrollTo will then push the URL bar away, and as long as scrollY > 0 stays,
+     iOS keeps it collapsed. position:fixed UI doesn't move when body scrolls. */
   @media (hover: none) and (pointer: coarse) {
-    html { overflow: auto; -webkit-overflow-scrolling: auto; }
-    html, body { height: auto; min-height: 100dvh; }
-    body { min-height: calc(100dvh + 80px); }
+    html, body {
+      height: auto;
+      min-height: 100dvh;
+      overflow: visible;
+      -webkit-overflow-scrolling: touch;
+    }
+    #iosScrollPad {
+      display: block;
+      width: 1px;
+      height: 100vh;
+      pointer-events: none;
+      visibility: hidden;
+    }
   }
 
   /* A faint grain — woven paper, not a gradient */
@@ -1308,6 +1319,12 @@
 
   <div id="drop"><span>Release to open</span></div>
 
+  <!-- iOS Safari URL-bar collapse: a real in-flow spacer the browser will
+       actually count toward document scrollHeight. min-height alone on a body
+       full of position:fixed children isn't enough on iOS — the document still
+       reports scrollHeight === clientHeight and the URL bar refuses to hide. -->
+  <div id="iosScrollPad" aria-hidden="true"></div>
+
   <div id="settings" aria-hidden="true">
     <div id="settingsCard">
       <div id="settingsHeader">
@@ -1347,7 +1364,7 @@
       <div class="settings-section">
         <span class="settings-eyebrow">Word size</span>
         <div id="scaleRow">
-          <input id="scaleSlider" type="range" min="50" max="220" value="100" step="0.1" aria-label="Word scale">
+          <input id="scaleSlider" type="range" min="20" max="260" value="100" step="0.1" aria-label="Word scale">
           <span id="scaleLabel">1.00×</span>
         </div>
       </div>
@@ -2373,7 +2390,7 @@
   // because that's all the previous value range allowed in storage. Live
   // interaction never rounds.
   const SCALE_KEY = "speading:scale";
-  const SCALE_MIN = 50, SCALE_MAX = 220;
+  const SCALE_MIN = 20, SCALE_MAX = 260;
   const scaleSlider = document.getElementById("scaleSlider");
   const scaleLabel = document.getElementById("scaleLabel");
   let scalePct = 100;
@@ -2427,10 +2444,29 @@
   // taller than the visible viewport — programmatically scrolling once is
   // enough to make iOS collapse the URL bar and leave it collapsed.
   function urlBarCollapseTrick() {
+    // Two RAFs lets layout settle (so iosScrollPad is laid out and document
+    // scrollHeight > clientHeight), then scroll past the URL-bar threshold.
+    // Belt + suspenders: set both window scroll and documentElement.scrollTop
+    // because iOS has historically had bugs with one or the other.
     requestAnimationFrame(() => requestAnimationFrame(() => {
-      window.scrollTo(0, 80);
+      const target = 120;
+      window.scrollTo(0, target);
+      try { document.documentElement.scrollTop = target; } catch {}
+      try { document.body.scrollTop = target; } catch {}
     }));
   }
+  // Also auto-attempt the trick the first time the user touches anything in
+  // landscape — iOS only collapses the bar in response to a user gesture.
+  let urlBarTried = false;
+  function tryUrlBarOnce() {
+    if (urlBarTried) return;
+    if (!isTouch) return;
+    if (window.innerHeight > window.innerWidth) return;
+    urlBarTried = true;
+    urlBarCollapseTrick();
+  }
+  window.addEventListener("pointerdown", tryUrlBarOnce, { passive: true, capture: true });
+  window.addEventListener("touchstart", tryUrlBarOnce, { passive: true, capture: true });
   function maybeFullscreen() {
     if (!isTouch) return;
     // Only auto-enter in landscape
