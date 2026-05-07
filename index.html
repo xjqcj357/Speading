@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <title>Speading</title>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Speading">
+<meta name="theme-color" content="#ECE4D4">
 <meta name="theme-color" content="#ece4d4">
 <style>
   /*
@@ -877,7 +882,7 @@
   }
 
   /* ---------- Settings link in folio ---------- */
-  #settingsLink {
+  #settingsLink, #fullscreenLink {
     pointer-events: auto;
     background: transparent;
     border: none;
@@ -891,7 +896,7 @@
     position: relative;
     -webkit-tap-highlight-color: transparent;
   }
-  #settingsLink::after {
+  #settingsLink::after, #fullscreenLink::after {
     content: "";
     position: absolute;
     left: 0; right: 0;
@@ -902,7 +907,11 @@
     transform-origin: right center;
     transition: transform 200ms ease;
   }
-  #settingsLink:hover::after { transform: scaleX(1); transform-origin: left center; }
+  #settingsLink:hover::after, #fullscreenLink:hover::after { transform: scaleX(1); transform-origin: left center; }
+  /* Hide the fullscreen link if the API isn't supported (set via JS) */
+  body.no-fullscreen-api #fullscreenLink { display: none; }
+  /* When already fullscreen, the link reads "Exit" — small affordance shift */
+  body.is-fullscreen #fullscreenLink { color: var(--accent); }
 
   /* ---------- Settings overlay ---------- */
   #settings {
@@ -1261,6 +1270,7 @@
 
   <div id="folio">
     <span id="brand">Speading</span>
+    <button id="fullscreenLink" title="Toggle fullscreen">Fullscreen</button>
     <button id="settingsLink" title="Settings">Settings</button>
     <span id="status"></span>
   </div>
@@ -2483,6 +2493,67 @@
     }
     urlBarCollapseTrick();
   }
+
+  // ---- Explicit Fullscreen toggle (works on iPad/Android always; on iPhone
+  // since iOS 16.4 for non-video elements). The folio link "Fullscreen" calls
+  // toggleFullscreen on click — that's a real user gesture, which is what the
+  // Fullscreen API requires. ----
+  const fullscreenLink = document.getElementById("fullscreenLink");
+  const fsApiSupported = !!(
+    document.documentElement.requestFullscreen ||
+    document.documentElement.webkitRequestFullscreen
+  );
+  // Detect "running as Home-Screen PWA" — already chromeless, no toggle needed.
+  const isStandalonePWA = window.navigator.standalone === true
+    || window.matchMedia("(display-mode: standalone)").matches
+    || window.matchMedia("(display-mode: fullscreen)").matches;
+  if (!fsApiSupported || isStandalonePWA) {
+    document.body.classList.add("no-fullscreen-api");
+  }
+  function isFullscreen() {
+    return !!(document.fullscreenElement || document.webkitFullscreenElement);
+  }
+  function enterFullscreen() {
+    const el = document.documentElement;
+    const req = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (!req) { urlBarCollapseTrick(); return Promise.resolve(); }
+    try {
+      const p = req.call(el);
+      if (p && typeof p.then === "function") {
+        return p.catch((err) => { urlBarCollapseTrick(); throw err; });
+      }
+      return Promise.resolve();
+    } catch (err) {
+      urlBarCollapseTrick();
+      return Promise.reject(err);
+    }
+  }
+  function exitFullscreen() {
+    const exit = document.exitFullscreen || document.webkitExitFullscreen;
+    if (!exit) return Promise.resolve();
+    try {
+      const p = exit.call(document);
+      return (p && typeof p.then === "function") ? p.catch(() => {}) : Promise.resolve();
+    } catch { return Promise.resolve(); }
+  }
+  function toggleFullscreen() {
+    return isFullscreen() ? exitFullscreen() : enterFullscreen();
+  }
+  function syncFullscreenLabel() {
+    const fs = isFullscreen() || isStandalonePWA;
+    document.body.classList.toggle("is-fullscreen", fs);
+    if (fullscreenLink) fullscreenLink.textContent = fs ? "Exit fullscreen" : "Fullscreen";
+  }
+  if (fullscreenLink) {
+    fullscreenLink.addEventListener("click", () => {
+      toggleFullscreen().catch(() => {
+        toast && toast("Fullscreen not available — try Add to Home Screen");
+      });
+    });
+  }
+  document.addEventListener("fullscreenchange", syncFullscreenLabel);
+  document.addEventListener("webkitfullscreenchange", syncFullscreenLabel);
+  syncFullscreenLabel();
   // Ribbon needs to recompute on rotate / resize. Word widths depend on
   // 9vw clamp so the cached `rights[]` array goes stale on viewport change.
   window.addEventListener("resize", () => {
