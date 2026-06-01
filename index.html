@@ -25,11 +25,25 @@
     --paper:        #ece4d4;
     --paper-deep:   #e3d9c4;
     --paper-edge:   #d8ccb2;
+    --paper-warmer: #efe2c4;
+    --paper-cooler: #e6dfd2;
     --ink:          #1b1814;
     --ink-soft:     #6b6357;
     --ink-faint:    #968c7c;
     --rule:         #c8bca0;
     --accent:       #8a2a1f;   /* a marginalia red — used sparingly */
+    --accent-alt:   #8a2a1f;   /* a second accent for views that use two (Bauhaus etc.) */
+    /* RGB triplets, kept in sync with the hex above. Used by rgba() overlays
+       (controls fade, drop overlay, mode-btn hover/pressed states) so the
+       same surfaces sit on every theme without hard-coding paper-cream. */
+    --paper-rgb:    236,228,212;
+    --ink-rgb:      28,24,22;
+    --accent-rgb:   154,50,30;
+    /* The focal-word font. Driven by a body.font-* class so themes can keep
+       palette and typeface orthogonal. Default mirrors --serif. */
+    --word-font: "New York", "Iowan Old Style", "Charter", "Sitka Text",
+                 "Hoefler Text", "Apple Garamond", "EB Garamond", Georgia,
+                 "Times New Roman", serif;
     --serif: "New York", "Iowan Old Style", "Charter", "Sitka Text",
              "Hoefler Text", "Apple Garamond", "EB Garamond", Georgia,
              "Times New Roman", serif;
@@ -84,20 +98,22 @@
     }
   }
 
-  /* A faint grain — woven paper, not a gradient */
+  /* A faint grain — woven paper, not a gradient. The grain is the ink color
+     at very low alpha, multiplied onto the page; on dark themes it reads as
+     a slightly darker noise rather than a brown smudge. */
   body::before {
     content: "";
     position: fixed; inset: 0;
     pointer-events: none;
     background-image:
-      radial-gradient(rgba(60,40,20,0.045) 1px, transparent 1px),
-      radial-gradient(rgba(40,20,10,0.035) 1px, transparent 1px);
+      radial-gradient(rgba(var(--ink-rgb),0.045) 1px, transparent 1px),
+      radial-gradient(rgba(var(--ink-rgb),0.035) 1px, transparent 1px);
     background-size: 3px 3px, 7px 7px;
     background-position: 0 0, 1px 2px;
     mix-blend-mode: multiply;
     z-index: 1;
   }
-  /* A vignette of warmer ink at the corners */
+  /* A vignette of darker ink at the corners */
   body::after {
     content: "";
     position: fixed; inset: 0;
@@ -105,9 +121,13 @@
     background:
       radial-gradient(ellipse at center,
         transparent 55%,
-        rgba(80,55,30,0.12) 100%);
+        rgba(var(--ink-rgb),0.12) 100%);
     z-index: 1;
   }
+  /* Dark themes need the grain/vignette suppressed — multiply on a dark
+     ground turns to mud, and the vignette becomes a fishbowl. */
+  body.theme-dark::before { mix-blend-mode: normal; opacity: 0.4; }
+  body.theme-dark::after { opacity: 0.55; }
 
   /* ---------- Stage ---------- */
 
@@ -146,7 +166,7 @@
   body.reading #stage::before { opacity: 0.35; }
 
   #word {
-    font-family: var(--serif);
+    font-family: var(--word-font);
     font-size: clamp(48px, 12vw, 168px);
     font-weight: 400;
     letter-spacing: -0.012em;
@@ -312,8 +332,8 @@
     z-index: 5;
     background: linear-gradient(to top,
       var(--paper) 30%,
-      rgba(236,228,212,0.85) 70%,
-      rgba(236,228,212,0));
+      rgba(var(--paper-rgb),0.85) 70%,
+      rgba(var(--paper-rgb),0));
   }
   #controls .row {
     display: flex; align-items: center; gap: 18px;
@@ -476,7 +496,7 @@
   #drop {
     position: fixed; inset: 0;
     display: none; align-items: center; justify-content: center;
-    background: rgba(236,228,212,0.94);
+    background: rgba(var(--paper-rgb),0.94);
     z-index: 30;
     pointer-events: none;
   }
@@ -554,12 +574,13 @@
     content: "";
     position: absolute; inset: 0;
     background-image:
-      radial-gradient(rgba(60,40,20,0.04) 1px, transparent 1px);
+      radial-gradient(rgba(var(--ink-rgb),0.04) 1px, transparent 1px);
     background-size: 4px 4px;
     pointer-events: none;
     mix-blend-mode: multiply;
     z-index: 1;
   }
+  body.theme-dark #overview::before { mix-blend-mode: normal; opacity: 0.35; }
 
   #ovHeader {
     position: relative;
@@ -735,13 +756,13 @@
     margin-right: var(--ov-gap, 14px);
     background: var(--paper);
     border: 1px solid var(--rule);
-    box-shadow: 0 1px 0 rgba(28,24,22,0.04),
-                0 12px 28px -14px rgba(60,30,10,0.18);
+    box-shadow: 0 1px 0 rgba(var(--ink-rgb),0.04),
+                0 12px 28px -14px rgba(var(--ink-rgb),0.18);
     overflow: hidden;
     position: relative;
     cursor: pointer;
     color: var(--ink);
-    font-family: var(--serif);
+    font-family: var(--word-font);
     transition: box-shadow 280ms var(--ease-out-apple),
                 transform 280ms var(--ease-out-apple);
   }
@@ -751,13 +772,13 @@
     /* Faint marginalia tint to show "you've been here". */
     content: "";
     position: absolute; inset: 0;
-    background: rgba(138, 42, 31, 0.05);
+    background: rgba(var(--accent-rgb), 0.05);
     pointer-events: none;
   }
   #ovStrip .tile.current {
     box-shadow: 0 0 0 2px var(--ink),
-                0 1px 0 rgba(28,24,22,0.04),
-                0 18px 36px -16px rgba(60,30,10,0.28);
+                0 1px 0 rgba(var(--ink-rgb),0.04),
+                0 18px 36px -16px rgba(var(--ink-rgb),0.28);
     transform: translateY(-2px);
     z-index: 2;
   }
@@ -1003,54 +1024,6 @@
     color: var(--ink-faint);
     margin-bottom: 14px;
   }
-  #modePicker {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    background: var(--rule);
-    border: 1px solid var(--rule);
-  }
-  .mode-btn {
-    display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
-    background: var(--paper);
-    border: none;
-    padding: 16px 18px;
-    cursor: pointer;
-    text-align: left;
-    font: inherit;
-    color: var(--ink);
-    transition: background 160ms ease;
-    position: relative;
-    -webkit-tap-highlight-color: transparent;
-    min-height: 64px;
-  }
-  .mode-btn:hover { background: rgba(154, 50, 30, 0.04); }
-  .mode-btn .mode-name {
-    font-family: var(--serif);
-    font-size: 18px;
-    font-weight: 500;
-    letter-spacing: 0.005em;
-  }
-  .mode-btn .mode-desc {
-    font-family: var(--serif);
-    font-style: italic;
-    font-size: 13px;
-    color: var(--ink-soft);
-    line-height: 1.4;
-  }
-  .mode-btn[aria-pressed="true"] {
-    background: var(--ink);
-    color: var(--paper);
-  }
-  .mode-btn[aria-pressed="true"] .mode-desc { color: rgba(236, 228, 212, 0.8); }
-  .mode-btn[aria-pressed="true"]::before {
-    content: "";
-    position: absolute;
-    left: 0; top: 0; bottom: 0;
-    width: 3px;
-    background: var(--accent);
-  }
-
   /* ---------- Highway lane (Highway transition mode) ---------- */
   #highwayLane {
     position: absolute;
@@ -1068,7 +1041,7 @@
     position: absolute;
     top: 50%;
     left: 0;
-    font-family: var(--serif);
+    font-family: var(--word-font);
     font-weight: 500;
     font-size: clamp(48px, 9vw, 140px);
     line-height: 1;
@@ -1110,7 +1083,7 @@
        layer's transform isn't fighting a non-3d translate(). */
     transform: translate3d(0, -50%, 0);
     white-space: nowrap;
-    font-family: var(--serif);
+    font-family: var(--word-font);
     font-weight: 500;
     font-size: calc(clamp(48px, 9vw, 140px) * var(--word-scale, 1));
     line-height: 1;
@@ -1139,57 +1112,11 @@
   body.style-sentence .highway-word { display: none; }
   body.style-cars .highway-ribbon { display: none; }
 
-  /* ---------- Highway sub-section in settings ---------- */
-  #highwaySection { display: none; }
-  body.mode-highway #highwaySection { display: block; }
+  /* ---------- Settings sections ---------- */
   .settings-section + .settings-section {
     margin-top: 24px;
     padding-top: 24px;
     border-top: 1px solid var(--rule);
-  }
-  #highwayStyle {
-    display: flex; flex-direction: column; gap: 1px;
-    background: var(--rule);
-    border: 1px solid var(--rule);
-  }
-  .hw-btn {
-    display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
-    background: var(--paper);
-    border: none;
-    padding: 14px 18px;
-    cursor: pointer;
-    text-align: left;
-    font: inherit;
-    color: var(--ink);
-    transition: background 160ms ease;
-    position: relative;
-    -webkit-tap-highlight-color: transparent;
-    min-height: 56px;
-  }
-  .hw-btn:hover { background: rgba(154, 50, 30, 0.04); }
-  .hw-btn .mode-name {
-    font-family: var(--serif);
-    font-size: 16px;
-    font-weight: 500;
-  }
-  .hw-btn .mode-desc {
-    font-family: var(--serif);
-    font-style: italic;
-    font-size: 12.5px;
-    color: var(--ink-soft);
-    line-height: 1.4;
-  }
-  .hw-btn[aria-pressed="true"] {
-    background: var(--ink);
-    color: var(--paper);
-  }
-  .hw-btn[aria-pressed="true"] .mode-desc { color: rgba(236, 228, 212, 0.8); }
-  .hw-btn[aria-pressed="true"]::before {
-    content: "";
-    position: absolute;
-    left: 0; top: 0; bottom: 0;
-    width: 3px;
-    background: var(--accent);
   }
 
   /* ---------- Word scale (font-size multiplier) ---------- */
@@ -1233,6 +1160,345 @@
     font-variant-numeric: tabular-nums;
     min-width: 60px;
     text-align: right;
+  }
+
+  /* ---------- Themes ----------
+     Each theme is a body class that overrides the palette CSS vars defined on
+     :root. We keep the variable surface area narrow so a theme is ~10 lines.
+     Dark themes also set `theme-dark` to suppress the paper grain/vignette.
+
+     Citations for palette logic:
+       - Solarized (Schoonover, 2011): constant L*a*b* lightness across light
+         and dark variants so accent hues read consistently.
+         https://ethanschoonover.com/solarized/
+       - Background luminance 5–10% for dark mode reduces rod fatigue (Apple
+         HIG; Mariakakis et al. CHI 2018, "Reading on screens at night"). Pure
+         #000 hurts eyes on OLED at low ambient light.
+       - Sepia ~#E8D5B0 mimics low-bleach book stock; lowers contrast to
+         ~10:1 instead of 21:1 pure black-on-white.                            */
+
+  body.theme-paper {
+    --paper: #ece4d4; --paper-deep: #e3d9c4; --paper-edge: #d8ccb2;
+    --paper-warmer: #efe2c4; --paper-cooler: #e6dfd2;
+    --ink: #1b1814; --ink-soft: #6b6357; --ink-faint: #968c7c;
+    --rule: #c8bca0; --accent: #8a2a1f; --accent-alt: #b07a2a;
+    --paper-rgb: 236,228,212; --ink-rgb: 28,24,22; --accent-rgb: 138,42,31;
+  }
+  body.theme-midnight {
+    /* Background luminance ~6% (#0F1623). Cream ink (not pure white) keeps
+       contrast near 14:1 — bright enough at speed, soft enough for an hour. */
+    --paper: #0f1623; --paper-deep: #161e2d; --paper-edge: #1e273a;
+    --paper-warmer: #18222f; --paper-cooler: #131929;
+    --ink: #e8dfcb; --ink-soft: #a89d83; --ink-faint: #6b6450;
+    --rule: #2e3a52; --accent: #6b89b5; --accent-alt: #c2a06a;
+    --paper-rgb: 15,22,35; --ink-rgb: 232,223,203; --accent-rgb: 107,137,181;
+  }
+  body.theme-eink {
+    /* Warm off-white (paper-white, not LCD-white) + true black ink + greyscale
+       accent. E-reader emulation; no chromatic accent at all. */
+    --paper: #f2eee5; --paper-deep: #e9e3d6; --paper-edge: #ddd6c5;
+    --paper-warmer: #f0ebe0; --paper-cooler: #ece6d8;
+    --ink: #0a0a09; --ink-soft: #545350; --ink-faint: #8c8a85;
+    --rule: #b8b3a6; --accent: #2a2926; --accent-alt: #5a5852;
+    --paper-rgb: 242,238,229; --ink-rgb: 10,10,9; --accent-rgb: 42,41,38;
+  }
+  body.theme-sepia {
+    --paper: #e8d5b0; --paper-deep: #ddc89c; --paper-edge: #d0b884;
+    --paper-warmer: #ead09c; --paper-cooler: #e6d3ae;
+    --ink: #3b2a1a; --ink-soft: #6e553a; --ink-faint: #9c8568;
+    --rule: #c6ad82; --accent: #8b3a1f; --accent-alt: #5c4126;
+    --paper-rgb: 232,213,176; --ink-rgb: 59,42,26; --accent-rgb: 139,58,31;
+  }
+  body.theme-solarized-light {
+    /* base3 / base00 / red — Schoonover's L*a*b*-constant set. */
+    --paper: #fdf6e3; --paper-deep: #eee8d5; --paper-edge: #e2dbb9;
+    --paper-warmer: #faf3d5; --paper-cooler: #f3edd6;
+    --ink: #657b83; --ink-soft: #93a1a1; --ink-faint: #b4b9a8;
+    --rule: #d8d2b5; --accent: #dc322f; --accent-alt: #268bd2;
+    --paper-rgb: 253,246,227; --ink-rgb: 101,123,131; --accent-rgb: 220,50,47;
+  }
+  body.theme-solarized-dark {
+    --paper: #002b36; --paper-deep: #073642; --paper-edge: #0a4250;
+    --paper-warmer: #093b48; --paper-cooler: #002630;
+    --ink: #93a1a1; --ink-soft: #839496; --ink-faint: #586e75;
+    --rule: #103e4a; --accent: #dc322f; --accent-alt: #268bd2;
+    --paper-rgb: 0,43,54; --ink-rgb: 147,161,161; --accent-rgb: 220,50,47;
+  }
+  body.theme-twilight {
+    /* Dusty plum ground, ivory ink, copper accent. Warmer than Midnight, less
+       monochrome than Solarized Dark — for evening reading. */
+    --paper: #2a1f33; --paper-deep: #34273f; --paper-edge: #3f3149;
+    --paper-warmer: #312338; --paper-cooler: #261c2f;
+    --ink: #f0e6d2; --ink-soft: #b9a98e; --ink-faint: #7c6d5e;
+    --rule: #4a3a55; --accent: #c77b40; --accent-alt: #8e6cb0;
+    --paper-rgb: 42,31,51; --ink-rgb: 240,230,210; --accent-rgb: 199,123,64;
+  }
+  body.theme-library {
+    /* Reading-room lamp: warm amber ground, walnut ink, brass accent. */
+    --paper: #e8c97a; --paper-deep: #ddbb62; --paper-edge: #cca842;
+    --paper-warmer: #e9c46c; --paper-cooler: #e3c882;
+    --ink: #3a2418; --ink-soft: #6e4f3a; --ink-faint: #94795f;
+    --rule: #c2a64f; --accent: #b07a2a; --accent-alt: #5a341a;
+    --paper-rgb: 232,201,122; --ink-rgb: 58,36,24; --accent-rgb: 176,122,42;
+  }
+  body.theme-contrast {
+    /* Pure white, pure black, thin red. For maximum acuity / low-vision. */
+    --paper: #ffffff; --paper-deep: #f4f4f4; --paper-edge: #e8e8e8;
+    --paper-warmer: #fafafa; --paper-cooler: #f6f6f6;
+    --ink: #000000; --ink-soft: #404040; --ink-faint: #808080;
+    --rule: #b8b8b8; --accent: #c8102e; --accent-alt: #000000;
+    --paper-rgb: 255,255,255; --ink-rgb: 0,0,0; --accent-rgb: 200,16,46;
+  }
+  body.theme-bauhaus {
+    /* Cream ground, navy ink, primary-red accent, brass alt. The Dessau-school
+       primaries, restrained — red is the focal ORP, yellow the UI affordance. */
+    --paper: #f1e9d6; --paper-deep: #e6dcc1; --paper-edge: #d8cba6;
+    --paper-warmer: #f3e7c3; --paper-cooler: #ece6d8;
+    --ink: #14213d; --ink-soft: #3d4861; --ink-faint: #7a8195;
+    --rule: #c2b896; --accent: #e63946; --accent-alt: #f4c430;
+    --paper-rgb: 241,233,214; --ink-rgb: 20,33,61; --accent-rgb: 230,57,70;
+  }
+
+  /* ---------- Fonts ----------
+     System-only stacks; no embeds. Each body class swaps --word-font, which
+     drives #word, .highway-word, .highway-ribbon and the Browse tile body.
+     The grotesk used for tiny UI captions stays as --grotesk.
+
+     Notes per stack (legibility at saccadic-suppression speeds, 200–800 WPM):
+       - High x-height and open apertures help disambiguate b/d/p/q under brief
+         exposure (Pelli & Tillman 2008, "The uncrowded window of object
+         recognition", Nat. Neurosci.).
+       - Wider tracking helps at high WPM by reducing crowding; we set per-font
+         letter-spacing on .word-tuned where it matters.                       */
+
+  body.font-editorial { --word-font: "New York", "Iowan Old Style", "Charter",
+                                     "Sitka Text", "Hoefler Text", Georgia,
+                                     "Times New Roman", serif; }
+  body.font-modern    { --word-font: "Hoefler Text", "Big Caslon", "Baskerville",
+                                     Georgia, "Times New Roman", serif; }
+  body.font-oldstyle  { --word-font: "EB Garamond", Garamond, "Sabon",
+                                     "Hoefler Text", Georgia, serif; }
+  body.font-geometric { --word-font: "Futura", "Avenir Next", "Avenir",
+                                     "Nunito Sans", system-ui, sans-serif; }
+  body.font-humanist  { --word-font: "Optima", "Gill Sans", "Lucida Sans",
+                                     "Lucida Grande", system-ui, sans-serif; }
+  body.font-grotesque { --word-font: "Helvetica Neue", "Helvetica", Arial,
+                                     system-ui, sans-serif; }
+  body.font-slab      { --word-font: "Rockwell", "Roboto Slab", "Courier Prime",
+                                     Georgia, serif; }
+  body.font-mono      { --word-font: "SF Mono", "Menlo", "Consolas",
+                                     "Courier New", monospace; }
+  body.font-didone    { --word-font: "Didot", "Bodoni 72", "Bodoni MT",
+                                     "Playfair Display", Georgia, serif; }
+  /* Reading Sans: legibility-tuned per Pelli's "uncrowded window" — modest
+     x-height, open counters, distinguishable I/l/1. Falls back to system. */
+  body.font-readsans  { --word-font: "Inter", "SF Pro Text", -apple-system,
+                                     BlinkMacSystemFont, "Segoe UI", system-ui,
+                                     sans-serif; }
+  /* Tracking tweaks per family — a tiny bump at very-high WPM helps. */
+  body.font-mono #word, body.font-mono .highway-ribbon, body.font-mono .highway-word { letter-spacing: -0.02em; }
+  body.font-didone #word, body.font-didone .highway-ribbon, body.font-didone .highway-word { letter-spacing: 0.005em; }
+
+  /* ---------- View modes ---------- */
+  /* A "view" is the unified picker that supersedes transition+highwayStyle.
+     The legacy body classes (.mode-flash, .mode-fade, .mode-highway,
+     .style-sentence, .style-cars) are still set by the JS shim so existing
+     CSS rules (highway lane visibility, etc.) keep working. New views add
+     additional body classes for view-specific styling. */
+
+  /* Pulse: fade + 2% scale dip. We piggyback on the fade transition and
+     add a brief scale wobble. */
+  body.view-pulse #word { transition: opacity var(--duration) cubic-bezier(.4,0,.2,1), transform var(--duration) cubic-bezier(.4,0,.2,1); }
+  body.view-pulse #word.pulsing { transform: scale(0.98); }
+
+  /* Bionic: bold the first 40–55% of each word; the rest stays regular.
+     Implementation: JS wraps the leading run in a <b class="bx">, the tail
+     in a <span class="bn">. We don't ship an ORP tick in this view because
+     the bold weight already provides the fixation cue.
+     Caveat: Bionic Reading's marketing claims of speed gains do not replicate
+     (Wallace et al., Journal of Eye Movement Research 2022) — we offer it
+     because some readers prefer the visual rhythm. */
+  body.view-bionic #word .bx { font-weight: 700; }
+  body.view-bionic #word .bn { font-weight: 400; opacity: 0.78; }
+  body.view-bionic #word .orp::after { display: none; }   /* the bolding *is* the cue */
+
+  /* ORP+: the focal letter is rendered larger with --orp-emphasis, the rest
+     of the word at --orp-rest (smaller weight, slightly faded). Tinted, not
+     red — we keep the accent for the tick everywhere else. */
+  body.view-orpplus #word .bn { font-weight: 300; opacity: 0.65; font-size: 0.78em; }
+  body.view-orpplus #word .bx { font-weight: 500; opacity: 0.65; font-size: 0.78em; }
+  body.view-orpplus #word .orp {
+    font-weight: 600;
+    color: var(--accent);
+    opacity: 1;
+    font-size: 1em;
+  }
+  body.view-orpplus #word .orp::after { display: none; }
+
+  /* Triplet: previous / current / next visible. */
+  body.view-triplet:not(.empty):not(.loading) #word {
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 0.4em;
+    max-width: 96vw;
+  }
+  body.view-triplet #word .tp-prev,
+  body.view-triplet #word .tp-next {
+    font-size: 0.5em;
+    color: var(--ink-faint);
+    opacity: 0.55;
+    font-weight: 300;
+  }
+  body.view-triplet #word .tp-cur {
+    color: var(--ink);
+    font-weight: 500;
+  }
+  body.view-triplet #word .tp-cur .orp { color: var(--accent); }
+
+  /* Chunked: shows N words on screen at a tick. Layout is just inline words
+     with a small gap; the ORP tick is dropped (which word would it be on?). */
+  body.view-chunked:not(.empty):not(.loading) #word {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: center;
+    gap: 0 0.42em;
+    max-width: 96vw;
+    line-height: 1.05;
+  }
+  body.view-chunked #word .ck { display: inline-block; }
+  body.view-chunked #word .ck .orp::after { display: none; }
+
+  /* Cascade: each letter reveals left-to-right inside the WPM tick window.
+     We CSS-animate a clip-path on a wrapping span; JS just rebuilds and
+     restarts the animation per word. */
+  body.view-cascade #word .cs {
+    display: inline-block;
+    clip-path: inset(0 100% 0 0);
+    animation: cs-wipe var(--cascade-dur, 80ms) linear forwards;
+  }
+  @keyframes cs-wipe { to { clip-path: inset(0 0 0 0); } }
+  @media (prefers-reduced-motion: reduce) {
+    body.view-cascade #word .cs { animation: none; clip-path: inset(0 0 0 0); }
+  }
+
+  /* Chunked: chunk-size slider section visibility. */
+  #chunkSizeSection { display: none; }
+  body.view-chunked #chunkSizeSection { display: block; }
+
+  /* ---------- Picker buttons (shared with Theme / Font / View) ---------- */
+  .picker {
+    display: flex; flex-direction: column; gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+  }
+  .pick-btn {
+    display: flex; align-items: center; gap: 12px;
+    background: var(--paper);
+    border: none;
+    padding: 14px 18px;
+    cursor: pointer;
+    text-align: left;
+    font: inherit;
+    color: var(--ink);
+    transition: background 160ms ease;
+    position: relative;
+    -webkit-tap-highlight-color: transparent;
+    min-height: 56px;
+    width: 100%;
+  }
+  .pick-btn:hover { background: rgba(var(--accent-rgb), 0.06); }
+  .pick-btn .pick-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+  .pick-btn .pick-name {
+    font-family: var(--serif);
+    font-size: 16px;
+    font-weight: 500;
+    letter-spacing: 0.005em;
+    color: inherit;
+  }
+  .pick-btn .pick-desc {
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    line-height: 1.35;
+  }
+  .pick-btn[aria-pressed="true"] {
+    background: var(--ink);
+    color: var(--paper);
+  }
+  .pick-btn[aria-pressed="true"] .pick-desc { color: rgba(var(--paper-rgb), 0.8); }
+  .pick-btn[aria-pressed="true"]::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: var(--accent);
+  }
+
+  /* Theme button gets a small swatch on the left. The swatch shows paper and
+     accent so a glance reveals the palette. */
+  .pick-btn .swatch {
+    flex: 0 0 36px;
+    width: 36px; height: 36px;
+    border-radius: 2px;
+    border: 1px solid var(--rule);
+    position: relative;
+    overflow: hidden;
+  }
+  .pick-btn .swatch::before {
+    content: "";
+    position: absolute; inset: 0;
+    background: var(--sw-paper, #ece4d4);
+  }
+  .pick-btn .swatch::after {
+    content: "";
+    position: absolute;
+    right: 0; top: 0; bottom: 0;
+    width: 38%;
+    background: var(--sw-accent, #8a2a1f);
+  }
+
+  /* Font picker preview: render the name itself in its own stack. */
+  .pick-btn.font-preview .pick-name {
+    font-family: var(--preview-font, var(--word-font));
+    font-size: 19px;
+    letter-spacing: 0.005em;
+  }
+
+  /* Chunk-size slider styling — matches WPM/scale sliders. */
+  #chunkRow { display: flex; align-items: center; gap: 14px; }
+  #chunkSlider {
+    flex: 1; height: 22px;
+    accent-color: var(--ink);
+    -webkit-appearance: none; appearance: none;
+    background: transparent;
+  }
+  #chunkSlider::-webkit-slider-runnable-track { height: 1px; background: var(--rule); }
+  #chunkSlider::-moz-range-track { height: 1px; background: var(--rule); }
+  #chunkSlider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--paper);
+    border: 1.5px solid var(--ink);
+    margin-top: -7px;
+    cursor: pointer;
+  }
+  #chunkSlider::-moz-range-thumb {
+    width: 14px; height: 14px; border-radius: 50%;
+    background: var(--paper); border: 1.5px solid var(--ink);
+    cursor: pointer;
+  }
+  #chunkLabel {
+    font-family: var(--grotesk);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-variant-numeric: tabular-nums;
+    min-width: 60px; text-align: right;
   }
 
   /* ---------- Phone landscape: collapse non-essentials so the page is the page ----------
@@ -1342,32 +1608,214 @@
         <button id="settingsClose" title="Close">Close</button>
       </div>
       <div class="settings-section">
-        <span class="settings-eyebrow">Word transition</span>
-        <div id="modePicker">
-          <button class="mode-btn" data-mode="flash">
-            <span class="mode-name">Flash</span>
-            <span class="mode-desc">Each word stamped on the page, sharp and sudden.</span>
+        <span class="settings-eyebrow">View</span>
+        <div class="picker" id="viewPicker">
+          <button class="pick-btn" data-view="flash">
+            <div class="pick-body">
+              <span class="pick-name">Flash</span>
+              <span class="pick-desc">Each word stamped on the page, sharp and sudden. The classic RSVP — fastest at 400+ WPM.</span>
+            </div>
           </button>
-          <button class="mode-btn" data-mode="fade">
-            <span class="mode-name">Fade</span>
-            <span class="mode-desc">A whisper of a transition. The previous word dissolves into the next.</span>
+          <button class="pick-btn" data-view="fade">
+            <div class="pick-body">
+              <span class="pick-name">Fade</span>
+              <span class="pick-desc">A whisper of a transition. The previous word dissolves into the next.</span>
+            </div>
           </button>
-          <button class="mode-btn" data-mode="highway">
-            <span class="mode-name">Highway</span>
-            <span class="mode-desc">Words pass by like cars at speed. The eye holds still; the language drives.</span>
+          <button class="pick-btn" data-view="pulse">
+            <div class="pick-body">
+              <span class="pick-name">Pulse</span>
+              <span class="pick-desc">Fade plus a 2% scale dip on each swap. A metronome for the eye.</span>
+            </div>
+          </button>
+          <button class="pick-btn" data-view="ribbon">
+            <div class="pick-body">
+              <span class="pick-name">Ribbon</span>
+              <span class="pick-desc">A continuous typeset sentence travelling at constant speed. Reads as a phrase.</span>
+            </div>
+          </button>
+          <button class="pick-btn" data-view="cars">
+            <div class="pick-body">
+              <span class="pick-name">Cars</span>
+              <span class="pick-desc">Discrete words sliding right to left like passing traffic. The eye holds still.</span>
+            </div>
+          </button>
+          <button class="pick-btn" data-view="bionic">
+            <div class="pick-body">
+              <span class="pick-name">Bionic</span>
+              <span class="pick-desc">First half of each word in bold to anchor fixation. Best at moderate speeds.</span>
+            </div>
+          </button>
+          <button class="pick-btn" data-view="orpplus">
+            <div class="pick-body">
+              <span class="pick-name">ORP+</span>
+              <span class="pick-desc">The focal letter set larger and tinted; the rest of the word recedes. Spritz-style.</span>
+            </div>
+          </button>
+          <button class="pick-btn" data-view="triplet">
+            <div class="pick-body">
+              <span class="pick-name">Triplet</span>
+              <span class="pick-desc">Previous, current, and next — three words on the page. Eye knows what's coming.</span>
+            </div>
+          </button>
+          <button class="pick-btn" data-view="chunked">
+            <div class="pick-body">
+              <span class="pick-name">Chunked</span>
+              <span class="pick-desc">N words flash together at every tick. Trades raw WPM for comprehension at speed.</span>
+            </div>
+          </button>
+          <button class="pick-btn" data-view="cascade">
+            <div class="pick-body">
+              <span class="pick-name">Cascade</span>
+              <span class="pick-desc">Each word's letters wipe in left to right. A close-reading mode for slow study.</span>
+            </div>
           </button>
         </div>
       </div>
-      <div class="settings-section" id="highwaySection">
-        <span class="settings-eyebrow">Highway · style</span>
-        <div id="highwayStyle">
-          <button class="hw-btn" data-style="sentence">
-            <span class="mode-name">Sentence</span>
-            <span class="mode-desc">A continuous ribbon of language at a steady pace. Words read as a phrase, not a flicker.</span>
+      <div class="settings-section" id="chunkSizeSection">
+        <span class="settings-eyebrow">Chunk size</span>
+        <div id="chunkRow">
+          <input id="chunkSlider" type="range" min="1" max="7" value="3" step="1" aria-label="Words per chunk">
+          <span id="chunkLabel">3 words</span>
+        </div>
+      </div>
+      <div class="settings-section">
+        <span class="settings-eyebrow">Theme</span>
+        <div class="picker" id="themePicker">
+          <button class="pick-btn" data-theme="paper" style="--sw-paper:#ece4d4;--sw-accent:#8a2a1f">
+            <span class="swatch"></span>
+            <div class="pick-body">
+              <span class="pick-name">Paper</span>
+              <span class="pick-desc">Cream stock, ink and a marginalia red. The default.</span>
+            </div>
           </button>
-          <button class="hw-btn" data-style="cars">
-            <span class="mode-name">Cars</span>
-            <span class="mode-desc">Discrete words, each spawned to the WPM. Travel time fixed; long words sweep faster.</span>
+          <button class="pick-btn" data-theme="midnight" style="--sw-paper:#0f1623;--sw-accent:#6b89b5">
+            <span class="swatch"></span>
+            <div class="pick-body">
+              <span class="pick-name">Midnight</span>
+              <span class="pick-desc">Deep navy ground at 6% luminance with cornflower accent. For the small hours.</span>
+            </div>
+          </button>
+          <button class="pick-btn" data-theme="eink" style="--sw-paper:#f2eee5;--sw-accent:#2a2926">
+            <span class="swatch"></span>
+            <div class="pick-body">
+              <span class="pick-name">E-ink</span>
+              <span class="pick-desc">Warm off-white and pure black, no chromatic accent. E-reader emulation.</span>
+            </div>
+          </button>
+          <button class="pick-btn" data-theme="sepia" style="--sw-paper:#e8d5b0;--sw-accent:#8b3a1f">
+            <span class="swatch"></span>
+            <div class="pick-body">
+              <span class="pick-name">Sepia</span>
+              <span class="pick-desc">Tan stock, dark sepia ink, oxblood accent. Lowered contrast for long sessions.</span>
+            </div>
+          </button>
+          <button class="pick-btn" data-theme="solarized-light" style="--sw-paper:#fdf6e3;--sw-accent:#dc322f">
+            <span class="swatch"></span>
+            <div class="pick-body">
+              <span class="pick-name">Solarized Light</span>
+              <span class="pick-desc">Schoonover's base3 / base00 / red, balanced for long-form code and prose.</span>
+            </div>
+          </button>
+          <button class="pick-btn" data-theme="solarized-dark" style="--sw-paper:#002b36;--sw-accent:#dc322f">
+            <span class="swatch"></span>
+            <div class="pick-body">
+              <span class="pick-name">Solarized Dark</span>
+              <span class="pick-desc">base03 / base0 / red. Same accent hues as the light variant.</span>
+            </div>
+          </button>
+          <button class="pick-btn" data-theme="twilight" style="--sw-paper:#2a1f33;--sw-accent:#c77b40">
+            <span class="swatch"></span>
+            <div class="pick-body">
+              <span class="pick-name">Twilight</span>
+              <span class="pick-desc">Dusty plum ground, ivory ink, copper accent. Warmer than Midnight.</span>
+            </div>
+          </button>
+          <button class="pick-btn" data-theme="library" style="--sw-paper:#e8c97a;--sw-accent:#b07a2a">
+            <span class="swatch"></span>
+            <div class="pick-body">
+              <span class="pick-name">Library</span>
+              <span class="pick-desc">Reading-room amber, walnut ink, brass accent. Lamp-lit study.</span>
+            </div>
+          </button>
+          <button class="pick-btn" data-theme="contrast" style="--sw-paper:#ffffff;--sw-accent:#c8102e">
+            <span class="swatch"></span>
+            <div class="pick-body">
+              <span class="pick-name">High contrast</span>
+              <span class="pick-desc">Pure white, pure black, one thin red rule. Maximum acuity.</span>
+            </div>
+          </button>
+          <button class="pick-btn" data-theme="bauhaus" style="--sw-paper:#f1e9d6;--sw-accent:#e63946">
+            <span class="swatch"></span>
+            <div class="pick-body">
+              <span class="pick-name">Bauhaus</span>
+              <span class="pick-desc">Cream, navy, primary red, brass yellow. Restrained Dessau-school primaries.</span>
+            </div>
+          </button>
+        </div>
+      </div>
+      <div class="settings-section">
+        <span class="settings-eyebrow">Font</span>
+        <div class="picker" id="fontPicker">
+          <button class="pick-btn font-preview" data-font="editorial" style='--preview-font: "New York","Iowan Old Style","Charter",Georgia,serif'>
+            <div class="pick-body">
+              <span class="pick-name">Editorial</span>
+              <span class="pick-desc">New York / Iowan / Charter. The default — high x-height, open apertures.</span>
+            </div>
+          </button>
+          <button class="pick-btn font-preview" data-font="modern" style='--preview-font: "Hoefler Text","Big Caslon","Baskerville",Georgia,serif'>
+            <div class="pick-body">
+              <span class="pick-name">Modern</span>
+              <span class="pick-desc">Hoefler / Caslon / Baskerville. Sturdy didone-adjacent forms.</span>
+            </div>
+          </button>
+          <button class="pick-btn font-preview" data-font="oldstyle" style='--preview-font: "EB Garamond",Garamond,"Sabon",Georgia,serif'>
+            <div class="pick-body">
+              <span class="pick-name">Old Style</span>
+              <span class="pick-desc">Garamond / Sabon. Long ascenders, classic-book proportions.</span>
+            </div>
+          </button>
+          <button class="pick-btn font-preview" data-font="geometric" style='--preview-font: "Futura","Avenir Next","Avenir",system-ui,sans-serif'>
+            <div class="pick-body">
+              <span class="pick-name">Geometric Sans</span>
+              <span class="pick-desc">Futura / Avenir. Clean, low-stroke-contrast. Reads fast in Flash.</span>
+            </div>
+          </button>
+          <button class="pick-btn font-preview" data-font="humanist" style='--preview-font: "Optima","Gill Sans","Lucida Sans",system-ui,sans-serif'>
+            <div class="pick-body">
+              <span class="pick-name">Humanist Sans</span>
+              <span class="pick-desc">Optima / Gill. Calligraphic warmth without serifs.</span>
+            </div>
+          </button>
+          <button class="pick-btn font-preview" data-font="grotesque" style='--preview-font: "Helvetica Neue",Helvetica,Arial,sans-serif'>
+            <div class="pick-body">
+              <span class="pick-name">Grotesque</span>
+              <span class="pick-desc">Helvetica / Arial. Neutral grotesk; predictable rhythm.</span>
+            </div>
+          </button>
+          <button class="pick-btn font-preview" data-font="slab" style='--preview-font: Rockwell,"Roboto Slab",Georgia,serif'>
+            <div class="pick-body">
+              <span class="pick-name">Slab</span>
+              <span class="pick-desc">Rockwell / Roboto Slab. Even stroke weight, blocky serifs.</span>
+            </div>
+          </button>
+          <button class="pick-btn font-preview" data-font="mono" style='--preview-font: "SF Mono",Menlo,Consolas,"Courier New",monospace'>
+            <div class="pick-body">
+              <span class="pick-name">Monospace</span>
+              <span class="pick-desc">SF Mono / Menlo. Each letter equal-width — easy fixation.</span>
+            </div>
+          </button>
+          <button class="pick-btn font-preview" data-font="didone" style='--preview-font: Didot,"Bodoni 72","Bodoni MT","Playfair Display",serif'>
+            <div class="pick-body">
+              <span class="pick-name">Display Didone</span>
+              <span class="pick-desc">Didot / Bodoni. High contrast and elegant — set scale large.</span>
+            </div>
+          </button>
+          <button class="pick-btn font-preview" data-font="readsans" style='--preview-font: Inter,"SF Pro Text",-apple-system,"Segoe UI",system-ui,sans-serif'>
+            <div class="pick-body">
+              <span class="pick-name">Reading Sans</span>
+              <span class="pick-desc">Inter / SF Pro Text. Tuned for screen legibility per Pelli's uncrowded window.</span>
+            </div>
           </button>
         </div>
       </div>
@@ -1420,7 +1868,9 @@
   const ovPageNum = $("ovPageNum"), ovTotal = $("ovTotal");
   const ovPrev = $("ovPrev"), ovNext = $("ovNext"), ovClose = $("ovClose"), ovJump = $("ovJump");
   const settingsLink = $("settingsLink"), settings = $("settings"), settingsClose = $("settingsClose");
-  const modePicker = $("modePicker"), highwayLane = $("highwayLane");
+  const highwayLane = $("highwayLane");
+  const viewPicker = $("viewPicker"), themePicker = $("themePicker"), fontPicker = $("fontPicker");
+  const chunkSlider = $("chunkSlider"), chunkLabel = $("chunkLabel");
 
   const PAGE_SIZE = 250;
   const STORAGE_PREFIX = "speading:v1:";
@@ -1497,56 +1947,174 @@
   const reducedMotion =
     window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  // ---- Word-transition modes ----
-  // "flash"   — instant content swap, no transition
-  // "fade"    — brief opacity dip, swap, fade back in
-  // "highway" — words slide horizontally across the stage like passing cars
-  const TRANSITION_KEY = "speading:transition";
-  const VALID_MODES = ["flash", "fade", "highway"];
-  let transitionMode = localStorage.getItem(TRANSITION_KEY);
-  if (!VALID_MODES.includes(transitionMode)) transitionMode = "fade";
-  // ---- Highway style (cars vs continuous sentence ribbon) ----
-  const HIGHWAY_STYLE_KEY = "speading:highwayStyle";
-  const VALID_HW_STYLES = ["sentence", "cars"];
-  let highwayStyle = localStorage.getItem(HIGHWAY_STYLE_KEY);
-  if (!VALID_HW_STYLES.includes(highwayStyle)) highwayStyle = "sentence";
-  function isRibbon() { return transitionMode === "highway" && highwayStyle === "sentence"; }
+  // ---- View modes ----
+  // The unified View picker supersedes the old transition+highwayStyle pair.
+  // Legacy localStorage keys still parse and migrate to the new key.
+  //
+  // Each view name maps to:
+  //   - a body class (.view-<name>) for styling
+  //   - legacy body classes (.mode-* and .style-*) so the existing highway-lane
+  //     visibility CSS rules keep working without rewriting them
+  //   - a render path inside showWord()
+  //
+  // View catalog:
+  //   flash    — instant content swap, no transition
+  //   fade     — brief opacity dip, swap, fade back in
+  //   pulse    — fade + a 2% scale dip (metronome)
+  //   ribbon   — continuous typeset sentence at constant px/sec (highway-sentence)
+  //   cars     — discrete words sliding right-to-left (highway-cars)
+  //   bionic   — first half of each word bolded (Bionic Reading-style)
+  //              caveat: speed/comprehension claims do not replicate
+  //              (Wallace et al., J. Eye Movement Res. 2022)
+  //   orpplus  — focal letter enlarged + tinted, neighbors faded smaller (Spritz-style)
+  //   triplet  — prev / current / next visible; reduces fixation cost
+  //   chunked  — N words flash together per tick (default N=3)
+  //   cascade  — letters wipe in left-to-right within the tick
 
-  function applyTransitionMode() {
-    document.body.classList.remove("mode-flash", "mode-fade", "mode-highway");
-    document.body.classList.remove("style-sentence", "style-cars");
-    document.body.classList.add("mode-" + transitionMode);
-    document.body.classList.add("style-" + highwayStyle);
-    document.querySelectorAll("#modePicker .mode-btn").forEach((b) => {
-      b.setAttribute("aria-pressed", b.dataset.mode === transitionMode ? "true" : "false");
-    });
-    document.querySelectorAll("#highwayStyle .hw-btn").forEach((b) => {
-      b.setAttribute("aria-pressed", b.dataset.style === highwayStyle ? "true" : "false");
+  const VIEW_KEY = "speading:view";
+  const VALID_VIEWS = ["flash","fade","pulse","ribbon","cars","bionic","orpplus","triplet","chunked","cascade"];
+  // Legacy keys: transition∈{flash,fade,highway}, highwayStyle∈{sentence,cars}.
+  // Migration table: flash→flash, fade→fade, highway+sentence→ribbon, highway+cars→cars.
+  function migrateLegacyView() {
+    try {
+      const v = localStorage.getItem(VIEW_KEY);
+      if (v && VALID_VIEWS.includes(v)) return v;
+      const legacyT = localStorage.getItem("speading:transition");
+      const legacyH = localStorage.getItem("speading:highwayStyle");
+      if (legacyT === "flash") return "flash";
+      if (legacyT === "fade")  return "fade";
+      if (legacyT === "highway") {
+        return legacyH === "cars" ? "cars" : "ribbon";
+      }
+    } catch {}
+    return "fade";
+  }
+  let view = migrateLegacyView();
+
+  // Chunk size (1..7), only used by view=chunked.
+  const CHUNK_KEY = "speading:chunk";
+  let chunkSize = parseInt(localStorage.getItem(CHUNK_KEY) || "3", 10);
+  if (!Number.isFinite(chunkSize) || chunkSize < 1 || chunkSize > 7) chunkSize = 3;
+  chunkSlider.value = chunkSize;
+  chunkLabel.textContent = chunkSize + " words";
+
+  // For the playback loop's purposes: a transition+highwayStyle shim derived
+  // from the active view. Old code paths that ask "isRibbon()" or check
+  // body.mode-highway keep working.
+  function legacyTransition(v) {
+    if (v === "ribbon" || v === "cars") return "highway";
+    return "fade";   // any other view uses the fade/flash render path
+  }
+  function legacyHighwayStyle(v) {
+    if (v === "cars") return "cars";
+    return "sentence";   // any ribbon-ish view uses sentence
+  }
+  let transitionMode = legacyTransition(view);
+  let highwayStyle = legacyHighwayStyle(view);
+  function isRibbon() { return view === "ribbon"; }
+
+  function applyView() {
+    transitionMode = legacyTransition(view);
+    highwayStyle = legacyHighwayStyle(view);
+    // Clear all view classes, then set the active one.
+    const cl = document.body.classList;
+    VALID_VIEWS.forEach((v) => cl.remove("view-" + v));
+    cl.add("view-" + view);
+    // Legacy classes (kept so existing CSS works untouched).
+    cl.remove("mode-flash","mode-fade","mode-highway","style-sentence","style-cars");
+    cl.add("mode-" + transitionMode);
+    cl.add("style-" + highwayStyle);
+    // Reflect button pressed state.
+    document.querySelectorAll("#viewPicker .pick-btn").forEach((b) => {
+      b.setAttribute("aria-pressed", b.dataset.view === view ? "true" : "false");
     });
   }
-  function setTransitionMode(m) {
-    if (!VALID_MODES.includes(m)) return;
+  function setView(v) {
+    if (!VALID_VIEWS.includes(v)) return;
     const wasPlaying = playing;
     if (wasPlaying) pause();
-    transitionMode = m;
-    try { localStorage.setItem(TRANSITION_KEY, m); } catch {}
-    applyTransitionMode();
+    view = v;
+    try { localStorage.setItem(VIEW_KEY, v); } catch {}
+    applyView();
+    // Tear down any ribbon DOM if we left a ribbon view; rebuild on next showWord.
     destroyRibbon();
     while (highwayLane.firstChild) highwayLane.removeChild(highwayLane.firstChild);
+    // Clear inline styles left by previous views (transform, opacity).
+    wordEl.style.transform = "";
+    wordEl.style.opacity = "";
+    wordEl.classList.remove("pulsing");
     if (words.length) showWord();
     if (wasPlaying) play();
   }
-  function setHighwayStyle(s) {
-    if (!VALID_HW_STYLES.includes(s)) return;
-    const wasPlaying = playing;
-    if (wasPlaying) pause();
-    highwayStyle = s;
-    try { localStorage.setItem(HIGHWAY_STYLE_KEY, s); } catch {}
-    applyTransitionMode();
-    destroyRibbon();
-    while (highwayLane.firstChild) highwayLane.removeChild(highwayLane.firstChild);
-    if (words.length && transitionMode === "highway") showWord();
-    if (wasPlaying) play();
+
+  // ---- Theme ----
+  const THEME_KEY = "speading:theme";
+  const VALID_THEMES = ["paper","midnight","eink","sepia","solarized-light","solarized-dark","twilight","library","contrast","bauhaus"];
+  const DARK_THEMES = new Set(["midnight","solarized-dark","twilight"]);
+  let theme = localStorage.getItem(THEME_KEY);
+  if (!VALID_THEMES.includes(theme)) theme = "paper";
+  function applyTheme() {
+    const cl = document.body.classList;
+    VALID_THEMES.forEach((t) => cl.remove("theme-" + t));
+    cl.add("theme-" + theme);
+    cl.toggle("theme-dark", DARK_THEMES.has(theme));
+    document.querySelectorAll("#themePicker .pick-btn").forEach((b) => {
+      b.setAttribute("aria-pressed", b.dataset.theme === theme ? "true" : "false");
+    });
+    // Update the iOS Safari status-bar meta to follow the paper color so the
+    // notch tints match. Best-effort; ignored elsewhere.
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) {
+      const cs = getComputedStyle(document.body);
+      const paper = cs.getPropertyValue("--paper").trim() || "#ece4d4";
+      meta.setAttribute("content", paper);
+    }
+  }
+  function setTheme(t) {
+    if (!VALID_THEMES.includes(t)) return;
+    theme = t;
+    try { localStorage.setItem(THEME_KEY, t); } catch {}
+    applyTheme();
+    // Ribbon caches word widths; theme alone doesn't change widths but font
+    // metrics under a theme may shift the rendered ink subpixel. Resync once.
+    if (isRibbon() && hw) {
+      hwResetWidths();
+      hwCenterIdx(idx, /*preserveOffset*/ true);
+    }
+  }
+
+  // ---- Font ----
+  const FONT_KEY = "speading:font";
+  const VALID_FONTS = ["editorial","modern","oldstyle","geometric","humanist","grotesque","slab","mono","didone","readsans"];
+  let fontChoice = localStorage.getItem(FONT_KEY);
+  if (!VALID_FONTS.includes(fontChoice)) fontChoice = "editorial";
+  function applyFont() {
+    const cl = document.body.classList;
+    VALID_FONTS.forEach((f) => cl.remove("font-" + f));
+    cl.add("font-" + fontChoice);
+    document.querySelectorAll("#fontPicker .pick-btn").forEach((b) => {
+      b.setAttribute("aria-pressed", b.dataset.font === fontChoice ? "true" : "false");
+    });
+  }
+  function setFont(f) {
+    if (!VALID_FONTS.includes(f)) return;
+    fontChoice = f;
+    try { localStorage.setItem(FONT_KEY, f); } catch {}
+    applyFont();
+    // Font swap changes word widths — the ribbon's cached `rights[]` must be
+    // recomputed or it'll drift on the next frame.
+    if (isRibbon() && hw) {
+      hwResetWidths();
+      hwCenterIdx(idx, /*preserveOffset*/ true);
+    }
+  }
+
+  function setChunkSize(n) {
+    n = Math.max(1, Math.min(7, parseInt(n, 10) || 3));
+    chunkSize = n;
+    chunkLabel.textContent = n + " word" + (n === 1 ? "" : "s");
+    try { localStorage.setItem(CHUNK_KEY, n); } catch {}
+    if (view === "chunked" && words.length) showWord();
   }
 
   // ---- Highway · Cars: spawn one word that slides off-right to off-left ----
@@ -1788,17 +2356,186 @@
   }
   let ribbonInertia = null;
 
+  // --- View-specific renderers ---
+  // Each view that doesn't reuse the default renderFocal path defines a
+  // function here. The dispatcher in showWord() picks one.
+
+  // Bionic: bold the leading 50% of the LETTER run in each word. Punctuation
+  // is split out at the head/tail. We render the ORP tick still (it's hidden
+  // by CSS for this view) so toggling views doesn't churn DOM structure.
+  function renderBionic(w, target) {
+    target = target || wordEl;
+    const letters = [...w];
+    // Find letter spans (skip punctuation at head/tail for bolding logic).
+    let lead = 0;
+    while (lead < letters.length && !/\p{L}/u.test(letters[lead])) lead++;
+    let trail = letters.length;
+    while (trail > lead && !/\p{L}/u.test(letters[trail - 1])) trail--;
+    const letterCount = trail - lead;
+    if (letterCount <= 1) { target.textContent = w; return; }
+    // Bold ~50% — rounded up for short words (so "the" gets "th" bold).
+    const boldN = Math.max(1, Math.ceil(letterCount * 0.5));
+    target.innerHTML = "";
+    if (lead > 0) target.appendChild(document.createTextNode(letters.slice(0, lead).join("")));
+    const bx = document.createElement("b");
+    bx.className = "bx";
+    bx.textContent = letters.slice(lead, lead + boldN).join("");
+    target.appendChild(bx);
+    if (lead + boldN < trail) {
+      const bn = document.createElement("span");
+      bn.className = "bn";
+      bn.textContent = letters.slice(lead + boldN, trail).join("");
+      target.appendChild(bn);
+    }
+    if (trail < letters.length) target.appendChild(document.createTextNode(letters.slice(trail).join("")));
+  }
+
+  // ORP+: focal letter big and tinted, rest of word small + faded. Reuses
+  // the existing .orp span (with our orpIndex calc) but flanks it with .bx /
+  // .bn so CSS can size them down independently.
+  function renderOrpPlus(w, target) {
+    target = target || wordEl;
+    const letters = [...w];
+    let start = 0;
+    while (start < letters.length && !/\p{L}/u.test(letters[start])) start++;
+    if (start === letters.length) { target.textContent = w; return; }
+    const tail = letters.slice(start);
+    const orp = start + Math.min(orpIndex(tail.join("")), tail.length - 1);
+    const before = letters.slice(0, orp).join("");
+    const at = letters[orp];
+    const after = letters.slice(orp + 1).join("");
+    target.innerHTML = "";
+    if (before) {
+      const bn = document.createElement("span");
+      bn.className = "bn";
+      bn.textContent = before;
+      target.appendChild(bn);
+    }
+    const span = document.createElement("span");
+    span.className = "orp";
+    span.textContent = at;
+    target.appendChild(span);
+    if (after) {
+      const bx = document.createElement("span");
+      bx.className = "bx";
+      bx.textContent = after;
+      target.appendChild(bx);
+    }
+  }
+
+  // Triplet: prev + current + next as one composite #word. The current word
+  // gets the ORP tick; neighbors are dimmed and shrunk via CSS.
+  function renderTriplet(target) {
+    target = target || wordEl;
+    target.innerHTML = "";
+    const prev = idx > 0 ? words[idx - 1] : "";
+    const next = idx < words.length - 1 ? words[idx + 1] : "";
+    if (prev) {
+      const p = document.createElement("span");
+      p.className = "tp-prev"; p.textContent = prev;
+      target.appendChild(p);
+    }
+    const c = document.createElement("span");
+    c.className = "tp-cur";
+    renderFocal(words[idx], c);
+    target.appendChild(c);
+    if (next) {
+      const n = document.createElement("span");
+      n.className = "tp-next"; n.textContent = next;
+      target.appendChild(n);
+    }
+  }
+
+  // Chunked: render N consecutive words inline. The current "idx" anchors
+  // the chunk's center-ish; we render words [idx .. idx+chunkSize-1] so the
+  // tick interval (in tick()) advances by chunkSize per beat.
+  function renderChunk(target) {
+    target = target || wordEl;
+    target.innerHTML = "";
+    const end = Math.min(words.length, idx + chunkSize);
+    for (let i = idx; i < end; i++) {
+      const span = document.createElement("span");
+      span.className = "ck";
+      // Mark the ORP on the middle word of the chunk for a fixation anchor.
+      if (i === idx + Math.floor((end - idx - 1) / 2)) {
+        renderFocal(words[i], span);
+      } else {
+        span.textContent = words[i];
+      }
+      target.appendChild(span);
+    }
+  }
+
+  // Cascade: each letter wrapped in a .cs span that wipes in via CSS
+  // animation. Duration is min(80ms, tick*0.6) so it never bleeds past the
+  // next word at high WPM.
+  function renderCascade(w, target) {
+    target = target || wordEl;
+    target.innerHTML = "";
+    const letters = [...w];
+    let start = 0;
+    while (start < letters.length && !/\p{L}/u.test(letters[start])) start++;
+    const tail = letters.slice(start);
+    const orpAt = start + Math.min(orpIndex(tail.join("")), Math.max(0, tail.length - 1));
+    // Total cascade duration: hug 80ms but cap at 60% of the tick interval.
+    const tickMs = intervalMs();
+    const total = Math.max(40, Math.min(80, tickMs * 0.6));
+    const per = total / Math.max(1, letters.length);
+    for (let i = 0; i < letters.length; i++) {
+      const ch = letters[i];
+      const span = document.createElement("span");
+      span.className = "cs";
+      span.style.animationDuration = per.toFixed(1) + "ms";
+      span.style.animationDelay = (per * i).toFixed(1) + "ms";
+      if (i === orpAt) {
+        const orp = document.createElement("span");
+        orp.className = "orp";
+        orp.textContent = ch;
+        span.appendChild(orp);
+      } else {
+        span.textContent = ch;
+      }
+      target.appendChild(span);
+    }
+  }
+
   function showWord() {
     const w = words[idx];
     if (!w) return;
-    if (isRibbon()) {
+    if (view === "ribbon") {
       ensureRibbon();
       hwCenterIdx(idx, /*preserveOffset*/ true);
-    } else if (transitionMode === "highway") {
+    } else if (view === "cars") {
       spawnHighwayWord(w);
-    } else if (reducedMotion || transitionMode === "flash") {
+    } else if (view === "bionic") {
+      // No fade — bionic relies on the visual punch of the bolding cue.
+      renderBionic(w);
+    } else if (view === "orpplus") {
+      if (reducedMotion) { renderOrpPlus(w); }
+      else {
+        wordEl.style.opacity = "0";
+        setTimeout(() => { renderOrpPlus(w); wordEl.style.opacity = "1"; }, 35);
+      }
+    } else if (view === "triplet") {
+      renderTriplet();
+    } else if (view === "chunked") {
+      renderChunk();
+    } else if (view === "cascade") {
+      renderCascade(w);
+    } else if (view === "pulse") {
+      if (reducedMotion) { renderFocal(w); }
+      else {
+        wordEl.style.opacity = "0";
+        wordEl.classList.add("pulsing");
+        setTimeout(() => {
+          renderFocal(w);
+          wordEl.style.opacity = "1";
+          wordEl.classList.remove("pulsing");
+        }, 45);
+      }
+    } else if (reducedMotion || view === "flash") {
       renderFocal(w);
-    } else { // fade
+    } else { // fade (default)
       wordEl.style.opacity = "0";
       setTimeout(() => {
         renderFocal(w);
@@ -1815,9 +2552,15 @@
   function tick() {
     if (!playing) return;
     if (idx >= words.length - 1) { pause(); return; }
-    idx++;
+    // Chunked view advances by `chunkSize` per tick so the WPM dial still
+    // reflects words/min, not chunks/min. The interval scales by chunkSize
+    // too — a 300 WPM tempo with chunk=3 means one flash every 600ms
+    // (still 300 wpm read).
+    const step = (view === "chunked") ? Math.max(1, chunkSize) : 1;
+    idx = Math.min(words.length - 1, idx + step);
     showWord();
-    timer = setTimeout(tick, intervalMs());
+    const wait = (view === "chunked") ? intervalMs() * step : intervalMs();
+    timer = setTimeout(tick, wait);
   }
 
   function play() {
@@ -2372,7 +3115,9 @@
     settings.classList.add("visible");
     settings.setAttribute("aria-hidden", "false");
     requestAnimationFrame(() => settings.classList.add("open"));
-    applyTransitionMode();
+    applyView();
+    applyTheme();
+    applyFont();
   }
   function closeSettings() {
     settings.classList.remove("open");
@@ -2382,17 +3127,26 @@
   settingsLink.addEventListener("click", openSettings);
   settingsClose.addEventListener("click", closeSettings);
   settings.addEventListener("click", (e) => { if (e.target === settings) closeSettings(); });
-  modePicker.addEventListener("click", (e) => {
-    const btn = e.target.closest(".mode-btn");
+  viewPicker.addEventListener("click", (e) => {
+    const btn = e.target.closest(".pick-btn");
     if (!btn) return;
-    setTransitionMode(btn.dataset.mode);
+    setView(btn.dataset.view);
   });
-  document.getElementById("highwayStyle").addEventListener("click", (e) => {
-    const btn = e.target.closest(".hw-btn");
+  themePicker.addEventListener("click", (e) => {
+    const btn = e.target.closest(".pick-btn");
     if (!btn) return;
-    setHighwayStyle(btn.dataset.style);
+    setTheme(btn.dataset.theme);
   });
-  applyTransitionMode();
+  fontPicker.addEventListener("click", (e) => {
+    const btn = e.target.closest(".pick-btn");
+    if (!btn) return;
+    setFont(btn.dataset.font);
+  });
+  chunkSlider.addEventListener("input", () => setChunkSize(chunkSlider.value));
+  // Apply persisted choices on load.
+  applyTheme();
+  applyFont();
+  applyView();
 
   // ---- Word scale (continuous float) ----
   // Single source of truth: scalePct (a float, 50..220). The slider mirrors
